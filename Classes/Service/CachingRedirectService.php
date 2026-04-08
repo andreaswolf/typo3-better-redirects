@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace a9f\BetterRedirects\Service;
 
 use a9f\BetterRedirects\Cache\MatchResultCacheInterface;
+use a9f\BetterRedirects\Cache\PhpFileRedirectMatcherService;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -30,6 +31,7 @@ class CachingRedirectService extends RedirectService
         PhpFrontend $typoScriptCache,
         LoggerInterface $logger,
         private readonly MatchResultCacheInterface $matchResultCache,
+        private readonly PhpFileRedirectMatcherService $phpFileMatcher,
     ) {
         parent::__construct(
             $redirectCacheService,
@@ -45,11 +47,20 @@ class CachingRedirectService extends RedirectService
 
     public function matchRedirect(string $domain, string $path, string $query = ''): ?array
     {
+        // Layer 1: per-request result cache (keyed by domain+path+query)
         $cached = $this->matchResultCache->get($domain, $path, $query);
         if ($cached !== false) {
             return $cached;
         }
 
+        // Layer 2: PHP-file-compiled matcher (OPcache-resident trie + regex arrays)
+        $result = $this->phpFileMatcher->match($domain, $path, $query);
+        if ($result !== false) {
+            $this->matchResultCache->set($domain, $path, $query, $result, $this->computeLifetime($result));
+            return $result;
+        }
+
+        // Layer 3: TYPO3 cache / DB fallback (fires BeforeRedirectMatchDomainEvent)
         $result = parent::matchRedirect($domain, $path, $query);
         $this->matchResultCache->set($domain, $path, $query, $result, $this->computeLifetime($result));
         return $result;

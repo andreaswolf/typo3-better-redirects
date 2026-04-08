@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace a9f\BetterRedirects\Hook;
 
 use a9f\BetterRedirects\Cache\MatchResultCacheInterface;
+use a9f\BetterRedirects\Cache\PhpFileRedirectCache;
 use TYPO3\CMS\Core\Database\Connection;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
@@ -32,17 +33,20 @@ class DataHandlerResultCacheFlushingHook
         }
 
         $matchResultCache = GeneralUtility::makeInstance(MatchResultCacheInterface::class);
+        $phpFileCache = GeneralUtility::makeInstance(PhpFileRedirectCache::class);
         $sourceHosts = $this->resolveSourceHosts($parameters, $dataHandler);
 
         if ($sourceHosts !== []) {
             foreach (array_unique($sourceHosts) as $sourceHost) {
                 $matchResultCache->invalidate($sourceHost);
+                $phpFileCache->invalidate($sourceHost);
             }
             return;
         }
 
         // Safety fallback: flush all result cache entries when source hosts are unknown
         $matchResultCache->invalidate(null);
+        $phpFileCache->invalidate(null);
     }
 
     private function resolveSourceHosts(array $parameters, DataHandler $dataHandler): array
