@@ -1,0 +1,30 @@
+{
+    "name": "a9f/typo3-better-redirects",
+    "description": "Improved redirects handling for TYPO3, including optimized caching for large numbers of redirects",
+    "type": "typo3-cms-extension",
+    "require": {
+        "typo3/cms-core": "^13.4",
+        "typo3/cms-redirects": "^13.4"
+    },
+    "autoload": {
+        "psr-4": {
+            "a9f\\BetterRedirects\\": "Classes/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "a9f\\BetterRedirects\\": "Tests/"
+        }
+    },
+    "extra": {
+        "typo3/cms": {
+            "extension-key": "better_redirects"
+        }
+    },
+    "authors": [
+        {
+            "name": "Andreas Wolf",
+            "email": "dev@a-w.io"
+        }
+    ]
+}
