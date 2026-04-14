@@ -333,6 +333,84 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
     }
 
     #[Test]
+    public function trieShardingRecursesIntoOversizedFirstSegment(): void
+    {
+        // threshold=1: news has 2 redirects → dispatcher at depth 0 splits news into two leaf shards
+        $generator = new RedirectMatcherGenerator(splitThreshold: 1);
+        $host = 'deep-trie-1.host.' . uniqid();
+
+        $r1 = $this->makeRedirect(1);
+        $r2 = $this->makeRedirect(2);
+        $redirects = [
+            'flat' => [
+                '/news/2024/' => [1 => $r1],
+                '/news/2025/' => [2 => $r2],
+            ],
+        ];
+
+        $matcher = $this->generateAndLoadWith($generator, $host, $redirects);
+
+        self::assertSame(1, $matcher->match('/news/2024', '')['uid']);
+        self::assertSame(2, $matcher->match('/news/2025', '')['uid']);
+        self::assertNull($matcher->match('/news', ''));
+        self::assertNull($matcher->match('/other', ''));
+    }
+
+    #[Test]
+    public function trieShardingRecursesThreeLevelsDeep(): void
+    {
+        // threshold=1: news/2024 has 2 redirects → dispatcher at depth 1 as well
+        $generator = new RedirectMatcherGenerator(splitThreshold: 1);
+        $host = 'deep-trie-2.host.' . uniqid();
+
+        $r1 = $this->makeRedirect(1);
+        $r2 = $this->makeRedirect(2);
+        $redirects = [
+            'flat' => [
+                '/news/2024/article-1/' => [1 => $r1],
+                '/news/2024/article-2/' => [2 => $r2],
+            ],
+        ];
+
+        $matcher = $this->generateAndLoadWith($generator, $host, $redirects);
+
+        self::assertSame(1, $matcher->match('/news/2024/article-1', '')['uid']);
+        self::assertSame(2, $matcher->match('/news/2024/article-2', '')['uid']);
+        self::assertNull($matcher->match('/news/2024', ''));
+        self::assertNull($matcher->match('/news', ''));
+    }
+
+    #[Test]
+    public function trieDispatcherHandlesInlineRedirectAtOversizedNode(): void
+    {
+        // /section/ itself has a redirect AND three children → dispatcher with inline '' arm
+        $generator = new RedirectMatcherGenerator(splitThreshold: 2);
+        $host = 'inline-redirect.host.' . uniqid();
+
+        $r1 = $this->makeRedirect(1);
+        $r2 = $this->makeRedirect(2);
+        $r3 = $this->makeRedirect(3);
+        $r4 = $this->makeRedirect(4);
+        $redirects = [
+            'flat' => [
+                '/section/'   => [1 => $r1],
+                '/section/a/' => [2 => $r2],
+                '/section/b/' => [3 => $r3],
+                '/section/c/' => [4 => $r4],
+            ],
+        ];
+
+        $matcher = $this->generateAndLoadWith($generator, $host, $redirects);
+
+        self::assertSame(1, $matcher->match('/section', '')['uid']);
+        self::assertSame(2, $matcher->match('/section/a', '')['uid']);
+        self::assertSame(3, $matcher->match('/section/b', '')['uid']);
+        self::assertSame(4, $matcher->match('/section/c', '')['uid']);
+        self::assertNull($matcher->match('/section/d', ''));
+        self::assertNull($matcher->match('/other', ''));
+    }
+
+    #[Test]
     public function shardedTrieHandlesRootPath(): void
     {
         $generator = new RedirectMatcherGenerator(splitThreshold: 1);
