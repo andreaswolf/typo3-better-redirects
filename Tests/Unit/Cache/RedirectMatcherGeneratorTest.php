@@ -333,6 +333,26 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
     }
 
     #[Test]
+    public function smallChildrenAreBinPackedInsteadOfSplitIndividually(): void
+    {
+        // threshold=3: root trie has 6 small children (1 redirect each) → 2 bins of 3
+        $generator = new RedirectMatcherGenerator(splitThreshold: 3);
+        $host = 'bin-pack.host.' . uniqid();
+
+        $redirects = ['flat' => []];
+        for ($i = 1; $i <= 6; $i++) {
+            $redirects['flat']["/seg{$i}/"] = [$i => $this->makeRedirect($i)];
+        }
+
+        $matcher = $this->generateAndLoadWith($generator, $host, $redirects);
+
+        for ($i = 1; $i <= 6; $i++) {
+            self::assertSame($i, $matcher->match("/seg{$i}", '')['uid']);
+        }
+        self::assertNull($matcher->match('/other', ''));
+    }
+
+    #[Test]
     public function trieShardingRecursesIntoOversizedFirstSegment(): void
     {
         // threshold=1: news has 2 redirects → dispatcher at depth 0 splits news into two leaf shards

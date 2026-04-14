@@ -207,19 +207,70 @@ class RedirectMatcherGenerator
         }
 
         $segToBasenameSlug = [];
+        $smallChildren = [];
+
         foreach ($trieNode as $segment => $childNode) {
             if ($segment === '__redirects') {
                 continue;
             }
-            $childPrefix = $pathPrefix === '' ? (string)$segment : $pathPrefix . '/' . (string)$segment;
-            $childSlug = $hash . '_tr_' . md5($childPrefix);
-            $segToBasenameSlug[(string)$segment] = $childSlug;
-            yield from $this->yieldTrieShardFiles(
-                $hash, $childNode, $childPrefix, $depth + 1, $typePrefix, $childSlug
-            );
+            if ($this->countTrieNode($childNode) > $this->splitThreshold) {
+                // Large child: recurse so it gets its own dispatcher + shards.
+                $childPrefix = $pathPrefix === '' ? (string)$segment : $pathPrefix . '/' . (string)$segment;
+                $childSlug = $hash . '_tr_' . md5($childPrefix);
+                $segToBasenameSlug[(string)$segment] = $childSlug;
+                yield from $this->yieldTrieShardFiles(
+                    $hash, $childNode, $childPrefix, $depth + 1, $typePrefix, $childSlug
+                );
+            } else {
+                // Small child: collect for bin-packing to avoid one-redirect-per-file.
+                $smallChildren[(string)$segment] = $childNode;
+            }
+        }
+
+        // Bin-pack small children into groups of ~splitThreshold redirects each.
+        foreach ($this->packChildrenIntoBins($smallChildren) as $i => $binChildren) {
+            $binSlug = $slug . '_b' . $i;
+            foreach (array_keys($binChildren) as $segment) {
+                $segToBasenameSlug[$segment] = $binSlug;
+            }
+            yield $typePrefix . $binSlug => $this->generateTrieNodeFile($binChildren, $pathPrefix, $depth);
         }
 
         yield $typePrefix . $slug => $this->generateTrieDispatcherAtDepth($trieNode, $depth, $segToBasenameSlug);
+    }
+
+    /**
+     * Greedily pack small trie children into bins of at most $splitThreshold
+     * redirects each.  Returns a list of bins, each bin being [segment => childNode].
+     *
+     * @return array<int, array<string, array>>
+     */
+    private function packChildrenIntoBins(array $children): array
+    {
+        if ($children === []) {
+            return [];
+        }
+
+        $bins = [];
+        $currentBin = [];
+        $currentCount = 0;
+
+        foreach ($children as $segment => $childNode) {
+            $childCount = $this->countTrieNode($childNode);
+            if ($currentBin !== [] && $currentCount + $childCount > $this->splitThreshold) {
+                $bins[] = $currentBin;
+                $currentBin = [];
+                $currentCount = 0;
+            }
+            $currentBin[(string)$segment] = $childNode;
+            $currentCount += $childCount;
+        }
+
+        if ($currentBin !== []) {
+            $bins[] = $currentBin;
+        }
+
+        return $bins;
     }
 
     /**
@@ -248,8 +299,14 @@ class RedirectMatcherGenerator
                 . $this->dumper->dump($trieNode['__redirects']) . ')';
         }
 
+        // Group segments by their target slug to emit compact multi-value match arms.
+        $slugToSegments = [];
         foreach ($segToBasenameSlug as $seg => $slug) {
-            $arms[] = "\t\t\t" . $this->dumper->dump((string)$seg)
+            $slugToSegments[$slug][] = (string)$seg;
+        }
+        foreach ($slugToSegments as $slug => $segments) {
+            $segParts = array_map(fn(string $s): string => $this->dumper->dump($s), $segments);
+            $arms[] = "\t\t\t" . implode(', ', $segParts)
                 . " => \$this->loadShard(" . $this->dumper->dump($slug) . ", \$seg)";
         }
         $arms[] = "\t\t\tdefault => null";
