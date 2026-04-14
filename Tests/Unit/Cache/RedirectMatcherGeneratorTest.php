@@ -9,15 +9,19 @@ use PHPUnit\Framework\Attributes\Test;
 use TYPO3\TestingFramework\Core\Unit\UnitTestCase;
 
 /**
- * Tests the PHP code generator by generating classes, loading them with eval(),
- * and asserting matching behaviour.
+ * Tests the PHP code generator by writing files to a real temp directory,
+ * requiring the main class file, and asserting matching behaviour.
  *
- * Strategy: generate → eval (strip <?php) → instantiate → call match() → assert.
+ * Strategy: generateFiles() → write to tmpDir → require main file → instantiate → match() → assert.
+ * Using real require() (not eval) means __DIR__ inside generated classes resolves
+ * correctly to the temp directory, so lazy-load require calls work.
  */
 class RedirectMatcherGeneratorTest extends UnitTestCase
 {
     private RedirectMatcherGenerator $generator;
     private int $now;
+    /** @var string[] Temp directories registered for cleanup in tearDown. */
+    private array $tmpDirs = [];
 
     protected function setUp(): void
     {
@@ -29,6 +33,15 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
 
     protected function tearDown(): void
     {
+        foreach ($this->tmpDirs as $dir) {
+            foreach (glob($dir . '/*.php') ?: [] as $f) {
+                unlink($f);
+            }
+            if (is_dir($dir)) {
+                rmdir($dir);
+            }
+        }
+        $this->tmpDirs = [];
         unset($GLOBALS['SIM_ACCESS_TIME']);
         parent::tearDown();
     }
@@ -40,13 +53,15 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
     #[Test]
     public function generatedCodeIsValidPhp(): void
     {
-        $code = $this->generator->generate('example.com', []);
-
-        // Strip <?php tag for eval()
-        $evalCode = preg_replace('/^<\?php\s*/i', '', $code);
-        // Suppress output, just check for fatal errors
-        $result = @eval($evalCode);
-        self::assertNotFalse($result !== false || true, 'eval() of generated code produced a parse error');
+        foreach ($this->generator->generateFiles('validity.host.' . uniqid(), []) as $slug => $code) {
+            $stripped = preg_replace('/^<\?php\s*/i', '', $code);
+            // eval in isolation; a parse error causes eval() to return false
+            $result = @eval($stripped);
+            self::assertNotFalse(
+                $result !== false || true,
+                "eval() of generated file '{$slug}' produced a parse error"
+            );
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -217,22 +232,149 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
     }
 
     // -------------------------------------------------------------------------
+    // Sharding (threshold-based file splitting)
+    // -------------------------------------------------------------------------
+
+    #[Test]
+    public function flatWithQueryShardingMatchesAllPaths(): void
+    {
+        // Threshold 2: any bucket with > 2 total redirects triggers sharding.
+        $generator = new RedirectMatcherGenerator(splitThreshold: 2);
+        $host = 'sharded-fq.host.' . uniqid();
+
+        // 3 paths × 1 redirect each = 3 total → exceeds threshold 2 → sharded.
+        $r1 = $this->makeRedirect(1);
+        $r2 = $this->makeRedirect(2);
+        $r3 = $this->makeRedirect(3);
+        $redirects = [
+            'respect_query_parameters' => [
+                '/a?x=1' => [1 => $r1],
+                '/b?x=2' => [2 => $r2],
+                '/c?x=3' => [3 => $r3],
+            ],
+        ];
+
+        $matcher = $this->generateAndLoadWith($generator, $host, $redirects);
+
+        self::assertSame(1, $matcher->match('/a', 'x=1')['uid']);
+        self::assertSame(2, $matcher->match('/b', 'x=2')['uid']);
+        self::assertSame(3, $matcher->match('/c', 'x=3')['uid']);
+        self::assertNull($matcher->match('/a', 'x=2'));
+    }
+
+    #[Test]
+    public function trieShardingMatchesAllPaths(): void
+    {
+        // Threshold 2: 4 flat redirects → sharded by first segment.
+        $generator = new RedirectMatcherGenerator(splitThreshold: 2);
+        $host = 'sharded-tr.host.' . uniqid();
+
+        $r1 = $this->makeRedirect(1);
+        $r2 = $this->makeRedirect(2);
+        $r3 = $this->makeRedirect(3);
+        $r4 = $this->makeRedirect(4);
+        $redirects = [
+            'flat' => [
+                '/news/'    => [1 => $r1],
+                '/about/'   => [2 => $r2],
+                '/contact/' => [3 => $r3],
+                '/blog/'    => [4 => $r4],
+            ],
+        ];
+
+        $matcher = $this->generateAndLoadWith($generator, $host, $redirects);
+
+        self::assertSame(1, $matcher->match('/news', '')['uid']);
+        self::assertSame(2, $matcher->match('/about', '')['uid']);
+        self::assertSame(3, $matcher->match('/contact', '')['uid']);
+        self::assertSame(4, $matcher->match('/blog', '')['uid']);
+        self::assertNull($matcher->match('/other', ''));
+    }
+
+    #[Test]
+    public function regexShardingMatchesAllPatterns(): void
+    {
+        // Threshold 2: 3 regex redirects → sharded.
+        $generator = new RedirectMatcherGenerator(splitThreshold: 2);
+        $host = 'sharded-rf.host.' . uniqid();
+
+        $r1 = $this->makeRedirect(1);
+        $r2 = $this->makeRedirect(2);
+        $r3 = $this->makeRedirect(3);
+        $redirects = [
+            'regexp_flat' => [
+                '/^\/old1\//' => [1 => $r1],
+                '/^\/old2\//' => [2 => $r2],
+                '/^\/old3\//' => [3 => $r3],
+            ],
+        ];
+
+        $matcher = $this->generateAndLoadWith($generator, $host, $redirects);
+
+        self::assertSame(1, $matcher->match('/old1/page', '')['uid']);
+        self::assertSame(2, $matcher->match('/old2/page', '')['uid']);
+        self::assertSame(3, $matcher->match('/old3/page', '')['uid']);
+        self::assertNull($matcher->match('/other/page', ''));
+    }
+
+    #[Test]
+    public function shardedTrieHandlesRootPath(): void
+    {
+        $generator = new RedirectMatcherGenerator(splitThreshold: 1);
+        $host = 'sharded-root.host.' . uniqid();
+
+        $root = $this->makeRedirect(99);
+        $news = $this->makeRedirect(1);
+        $redirects = [
+            'flat' => [
+                '/'      => [99 => $root],
+                '/news/' => [1 => $news],
+            ],
+        ];
+
+        $matcher = $this->generateAndLoadWith($generator, $host, $redirects);
+
+        self::assertSame(99, $matcher->match('/', '')['uid']);
+        self::assertSame(1, $matcher->match('/news', '')['uid']);
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
     /**
-     * Generate PHP code, eval() it, and return an instance of the generated class.
+     * Write all generated files to a real temp directory, require() the main class
+     * file, and return an instance of the generated matcher.
      *
-     * Uses a unique host per call to avoid class-name collisions across tests
-     * (PHP does not allow redefining a class).
+     * Using require() (not eval()) means __DIR__ inside the generated class resolves
+     * to the temp directory, so the lazy-load `require __DIR__ . '/...'` calls inside
+     * the matcher methods find their type files correctly.
+     *
+     * Uses a unique host per call to avoid class-name collisions across tests.
      */
     private function generateAndLoad(string $host, array $redirects): \a9f\BetterRedirects\Cache\GeneratedRedirectMatcherBase
     {
-        $code = $this->generator->generate($host, $redirects);
-        $evalCode = preg_replace('/^<\?php\s*/i', '', $code);
-        eval($evalCode);
+        return $this->generateAndLoadWith($this->generator, $host, $redirects);
+    }
 
-        $className = 'a9f\\BetterRedirects\\Cache\\Generated\\RedirectMatcher_' . md5($host);
+    private function generateAndLoadWith(
+        RedirectMatcherGenerator $generator,
+        string $host,
+        array $redirects
+    ): \a9f\BetterRedirects\Cache\GeneratedRedirectMatcherBase {
+        $tmpDir = sys_get_temp_dir() . '/br_gen_test_' . md5($host . uniqid('', true));
+        mkdir($tmpDir, 0755, true);
+        $this->tmpDirs[] = $tmpDir;
+
+        foreach ($generator->generateFiles($host, $redirects) as $slug => $code) {
+            file_put_contents($tmpDir . '/' . $slug . '.php', $code);
+        }
+
+        $hash = md5($host);
+        $className = 'a9f\\BetterRedirects\\Cache\\Generated\\RedirectMatcher_' . $hash;
+        if (!class_exists($className, false)) {
+            require $tmpDir . '/' . $hash . '.php';
+        }
         return new $className();
     }
 

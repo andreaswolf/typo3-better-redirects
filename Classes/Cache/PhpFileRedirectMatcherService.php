@@ -53,8 +53,11 @@ class PhpFileRedirectMatcherService
     {
         if (!$this->fileCache->exists($host)) {
             $redirects = $this->redirectCacheService->getRedirects($host);
-            $phpCode = $this->generator->generate($host, $redirects);
-            $this->fileCache->write($host, $phpCode);
+            foreach ($this->generator->generateFiles($host, $redirects) as $slug => $code) {
+                $this->fileCache->writeSlug($slug, $code);
+            }
+            // The main file ({hash}.php) is the last slug yielded; its presence
+            // signals that all type files were written successfully.
         }
         return $this->fileCache->load($host);
     }

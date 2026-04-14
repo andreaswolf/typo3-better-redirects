@@ -53,7 +53,7 @@ abstract class GeneratedRedirectMatcherBase
         foreach ($this->matchRegexQueryParams() as $regexp => $redirects) {
             $matchResult = @preg_match((string)$regexp, $regExpPath);
             if ($matchResult > 0) {
-                $r = $this->firstActive($redirects);
+                $r = self::firstActive($redirects);
                 if ($r !== null) {
                     return $r;
                 }
@@ -63,7 +63,7 @@ abstract class GeneratedRedirectMatcherBase
         foreach ($this->matchRegexFlat() as $regexp => $redirects) {
             $matchResult = @preg_match((string)$regexp, $regExpPath);
             if ($matchResult > 0) {
-                $r = $this->firstActive($redirects);
+                $r = self::firstActive($redirects);
                 if ($r !== null) {
                     return $r;
                 }
@@ -74,7 +74,7 @@ abstract class GeneratedRedirectMatcherBase
             foreach ($this->matchRegexFlat() as $regexp => $redirects) {
                 $matchResult = @preg_match((string)$regexp, $path);
                 if ($matchResult > 0) {
-                    $r = $this->firstActive($redirects);
+                    $r = self::firstActive($redirects);
                     if ($r !== null) {
                         return $r;
                     }
@@ -93,9 +93,13 @@ abstract class GeneratedRedirectMatcherBase
      * starttime/endtime restrictions are handled correctly even when the
      * generated PHP file is cached across time boundaries.
      *
+     * Public and static so that anonymous classes in generated type files can
+     * call GeneratedRedirectMatcherBase::firstActive() without a reference to
+     * the main matcher instance.
+     *
      * @param array<int, array<string, mixed>> $redirects
      */
-    protected function firstActive(array $redirects): ?array
+    public static function firstActive(array $redirects): ?array
     {
         $now = $GLOBALS['SIM_ACCESS_TIME'] ?? time();
         foreach ($redirects as $redirect) {

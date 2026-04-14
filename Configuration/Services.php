@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use a9f\BetterRedirects\Cache\MatchResultCache;
 use a9f\BetterRedirects\Cache\MatchResultCacheInterface;
+use a9f\BetterRedirects\Cache\RedirectMatcherGenerator;
 use a9f\BetterRedirects\Service\CachingRedirectService;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
@@ -32,6 +33,11 @@ return function (ContainerConfigurator $containerConfigurator, ContainerBuilder 
     // Bind interface → implementation.
     // Must be public so GeneralUtility::makeInstance(MatchResultCacheInterface::class) works in the hook.
     $services->alias(MatchResultCacheInterface::class, MatchResultCache::class)->public();
+
+    // Wire the configurable split threshold for the PHP file cache generator.
+    // Redirects per match-type bucket above this count are split into shard files.
+    $services->set(RedirectMatcherGenerator::class)
+        ->arg('$splitThreshold', (int)($GLOBALS['TYPO3_CONF_VARS']['EXTENSIONS']['better_redirects']['splitThreshold'] ?? 1000));
 
     // Replace RedirectService with our caching subclass.
     // RedirectHandler injects RedirectService by concrete class name, so we alias it.

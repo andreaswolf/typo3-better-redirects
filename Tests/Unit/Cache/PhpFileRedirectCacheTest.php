@@ -44,7 +44,7 @@ class PhpFileRedirectCacheTest extends UnitTestCase
     }
 
     // -------------------------------------------------------------------------
-    // exists / write / load round-trip
+    // exists / writeSlug / load round-trip
     // -------------------------------------------------------------------------
 
     #[Test]
@@ -54,9 +54,9 @@ class PhpFileRedirectCacheTest extends UnitTestCase
     }
 
     #[Test]
-    public function existsReturnsTrueAfterWrite(): void
+    public function existsReturnsTrueAfterWritingAllFiles(): void
     {
-        $this->cache->write('example.com', $this->generateCode('example.com'));
+        $this->writeAllFiles('example.com');
         self::assertTrue($this->cache->exists('example.com'));
     }
 
@@ -64,7 +64,7 @@ class PhpFileRedirectCacheTest extends UnitTestCase
     public function loadReturnsMatcherInstanceAfterWrite(): void
     {
         $host = 'load-test-' . uniqid();
-        $this->cache->write($host, $this->generateCode($host));
+        $this->writeAllFiles($host);
         $matcher = $this->cache->load($host);
         self::assertInstanceOf(GeneratedRedirectMatcherBase::class, $matcher);
     }
@@ -74,11 +74,10 @@ class PhpFileRedirectCacheTest extends UnitTestCase
     {
         $host     = 'functional-' . uniqid();
         $redirect = ['uid' => 77, 'disabled' => 0, 'starttime' => 0, 'endtime' => 0, 'target' => '/new'];
-        $code     = $this->generator->generate($host, [
+
+        $this->writeAllFiles($host, [
             'flat' => ['/old/' => [77 => $redirect]],
         ]);
-
-        $this->cache->write($host, $code);
         $matcher = $this->cache->load($host);
 
         self::assertSame(77, $matcher->match('/old', '')['uid']);
@@ -93,24 +92,24 @@ class PhpFileRedirectCacheTest extends UnitTestCase
     public function writeDoesNotLeaveTemporaryFilesBehind(): void
     {
         $host = 'atomic-' . uniqid();
-        $this->cache->write($host, $this->generateCode($host));
+        $this->writeAllFiles($host);
 
         $files = glob($this->tmpDir . '/*.tmp.*') ?: [];
-        self::assertSame([], $files, 'No .tmp.* files should remain after write()');
+        self::assertSame([], $files, 'No .tmp.* files should remain after writeSlug()');
     }
 
     // -------------------------------------------------------------------------
-    // invalidate($host) — removes only that host's file
+    // invalidate($host) — removes all files for that host
     // -------------------------------------------------------------------------
 
     #[Test]
-    public function invalidateRemovesOnlyTheSpecifiedHostFile(): void
+    public function invalidateRemovesAllFilesForTheSpecifiedHost(): void
     {
         $hostA = 'host-a-' . uniqid();
         $hostB = 'host-b-' . uniqid();
 
-        $this->cache->write($hostA, $this->generateCode($hostA));
-        $this->cache->write($hostB, $this->generateCode($hostB));
+        $this->writeAllFiles($hostA);
+        $this->writeAllFiles($hostB);
 
         $this->cache->invalidate($hostA);
 
@@ -119,9 +118,9 @@ class PhpFileRedirectCacheTest extends UnitTestCase
     }
 
     #[Test]
-    public function invalidateSingleHostIsIdempotentWhenFileDoesNotExist(): void
+    public function invalidateSingleHostIsIdempotentWhenFilesDoNotExist(): void
     {
-        // Should not throw when the file is absent
+        // Should not throw when no files are present for the host
         $this->cache->invalidate('nonexistent.host');
         self::assertFalse($this->cache->exists('nonexistent.host'));
     }
@@ -135,7 +134,7 @@ class PhpFileRedirectCacheTest extends UnitTestCase
     {
         $hosts = ['site-a-' . uniqid(), 'site-b-' . uniqid(), 'site-c-' . uniqid()];
         foreach ($hosts as $host) {
-            $this->cache->write($host, $this->generateCode($host));
+            $this->writeAllFiles($host);
         }
 
         $this->cache->invalidate(null);
@@ -157,8 +156,14 @@ class PhpFileRedirectCacheTest extends UnitTestCase
     // Helpers
     // -------------------------------------------------------------------------
 
-    private function generateCode(string $host): string
+    /**
+     * Write all generated PHP files for $host to the cache using writeSlug().
+     * This mirrors what PhpFileRedirectMatcherService does at runtime.
+     */
+    private function writeAllFiles(string $host, array $redirects = []): void
     {
-        return $this->generator->generate($host, []);
+        foreach ($this->generator->generateFiles($host, $redirects) as $slug => $code) {
+            $this->cache->writeSlug($slug, $code);
+        }
     }
 }
