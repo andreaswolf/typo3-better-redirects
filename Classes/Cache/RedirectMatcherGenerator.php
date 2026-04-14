@@ -69,28 +69,32 @@ class RedirectMatcherGenerator
      * } $redirects
      * @return \Generator<string, string>
      */
-    public function generateFiles(string $host, array $redirects): \Generator
+    public function generateFiles(string $host, array $redirects, string $versionDir): \Generator
     {
         $hash = md5($host);
+        // All type/shard files go into a versioned subdirectory so that the
+        // cache can be rewritten atomically: type files are written first into
+        // a new version dir, then the main file is replaced to point to it.
+        $typePrefix = $hash . '/' . $versionDir . '/';
 
         $fqData = $redirects['respect_query_parameters'] ?? [];
-        yield from $this->yieldFlatQueryFiles($hash, $fqData);
+        yield from $this->yieldFlatQueryFiles($hash, $fqData, $typePrefix);
         unset($fqData);
 
         $flatData = $redirects['flat'] ?? [];
-        yield from $this->yieldTrieFiles($hash, $flatData);
+        yield from $this->yieldTrieFiles($hash, $flatData, $typePrefix);
         unset($flatData);
 
         $rqData = $redirects['regexp_query_parameters'] ?? [];
-        yield from $this->yieldRegexFiles($hash, 'rq', $rqData);
+        yield from $this->yieldRegexFiles($hash, 'rq', $rqData, $typePrefix);
         unset($rqData);
 
         $rfData = $redirects['regexp_flat'] ?? [];
-        yield from $this->yieldRegexFiles($hash, 'rf', $rfData);
+        yield from $this->yieldRegexFiles($hash, 'rf', $rfData, $typePrefix);
         unset($rfData);
 
         // Main class last — its presence signals that all type files exist.
-        yield $hash => $this->generateMainClass($host, $hash);
+        yield $hash => $this->generateMainClass($host, $hash, $versionDir);
     }
 
     // -------------------------------------------------------------------------
@@ -98,12 +102,12 @@ class RedirectMatcherGenerator
     // -------------------------------------------------------------------------
 
     /** @return \Generator<string, string> */
-    private function yieldFlatQueryFiles(string $hash, array $withQuery): \Generator
+    private function yieldFlatQueryFiles(string $hash, array $withQuery, string $typePrefix): \Generator
     {
         $count = $this->countBucket($withQuery);
 
         if ($count <= $this->splitThreshold) {
-            yield $hash . '_fq' => $this->generateFlatQueryFile($withQuery);
+            yield $typePrefix . $hash . '_fq' => $this->generateFlatQueryFile($withQuery);
             return;
         }
 
@@ -114,9 +118,9 @@ class RedirectMatcherGenerator
             $shardData[$idx][(string)$key] = $redirectsByUid;
         }
         foreach ($shardData as $i => $shard) {
-            yield $hash . '_fq_' . $i => $this->generateFlatQueryFile($shard);
+            yield $typePrefix . $hash . '_fq_' . $i => $this->generateFlatQueryFile($shard);
         }
-        yield $hash . '_fq' => $this->generateFlatQueryDispatcher($hash, $numShards);
+        yield $typePrefix . $hash . '_fq' => $this->generateFlatQueryDispatcher($hash, $numShards);
     }
 
     /**
@@ -171,12 +175,12 @@ class RedirectMatcherGenerator
     // -------------------------------------------------------------------------
 
     /** @return \Generator<string, string> */
-    private function yieldTrieFiles(string $hash, array $flat): \Generator
+    private function yieldTrieFiles(string $hash, array $flat, string $typePrefix): \Generator
     {
         $count = $this->countBucket($flat);
 
         if ($count <= $this->splitThreshold) {
-            yield $hash . '_tr' => $this->generateTrieSingleFile($flat);
+            yield $typePrefix . $hash . '_tr' => $this->generateTrieSingleFile($flat);
             return;
         }
 
@@ -191,10 +195,10 @@ class RedirectMatcherGenerator
         foreach ($byFirstSeg as $seg => $segFlat) {
             $segSlug = $hash . '_tr_' . md5((string)$seg);
             $segToSlug[(string)$seg] = $segSlug;
-            yield $segSlug => $this->generateTrieShardFile($segFlat, (string)$seg);
+            yield $typePrefix . $segSlug => $this->generateTrieShardFile($segFlat, (string)$seg);
         }
 
-        yield $hash . '_tr' => $this->generateTrieDispatcher($segToSlug);
+        yield $typePrefix . $hash . '_tr' => $this->generateTrieDispatcher($segToSlug);
     }
 
     /**
@@ -362,23 +366,23 @@ class RedirectMatcherGenerator
     // -------------------------------------------------------------------------
 
     /** @return \Generator<string, string> */
-    private function yieldRegexFiles(string $hash, string $type, array $patterns): \Generator
+    private function yieldRegexFiles(string $hash, string $type, array $patterns, string $typePrefix): \Generator
     {
         $count = $this->countBucket($patterns);
 
         if ($count <= $this->splitThreshold) {
-            yield $hash . '_' . $type => $this->generateRegexFile($patterns);
+            yield $typePrefix . $hash . '_' . $type => $this->generateRegexFile($patterns);
             return;
         }
 
         $numShards = (int)ceil($count / $this->splitThreshold);
         $chunks = array_chunk($patterns, max(1, (int)ceil(count($patterns) / $numShards)), true);
         foreach ($chunks as $i => $chunk) {
-            yield $hash . '_' . $type . '_' . $i => $this->generateRegexFile($chunk);
+            yield $typePrefix . $hash . '_' . $type . '_' . $i => $this->generateRegexFile($chunk);
         }
 
         $actualShards = count($chunks);
-        yield $hash . '_' . $type => $this->generateRegexLoader($hash, $type, $actualShards);
+        yield $typePrefix . $hash . '_' . $type => $this->generateRegexLoader($hash, $type, $actualShards);
     }
 
     /**
@@ -415,14 +419,15 @@ class RedirectMatcherGenerator
      * Generate the main class file that extends GeneratedRedirectMatcherBase and
      * delegates each abstract method to a lazily-loaded type handler file.
      */
-    private function generateMainClass(string $host, string $hash): string
+    private function generateMainClass(string $host, string $hash, string $versionDir): string
     {
         $file = new PhpFile();
         $file->setStrictTypes(true);
         $file->addComment(
             "@generated\n" .
             '@date ' . date('Y-m-d H:i:s') . "\n" .
-            '@host ' . $host
+            '@host ' . $host . "\n" .
+            '@version ' . $versionDir
         );
 
         $namespace = $file->addNamespace('a9f\\BetterRedirects\\Cache\\Generated');
@@ -431,13 +436,18 @@ class RedirectMatcherGenerator
         $class = $namespace->addClass('RedirectMatcher_' . $hash);
         $class->setExtends(GeneratedRedirectMatcherBase::class);
 
+        // Type files live in the versioned subdirectory.  Using the full relative
+        // path from __DIR__ (which resolves to the flat cache dir next to this file)
+        // means switching to a new version dir is just an atomic rename of this file.
+        $typePath = "{$hash}/{$versionDir}/";
+
         $m = $class->addMethod('matchFlatWithQuery');
         $m->setVisibility('protected');
         $m->addParameter('key')->setType('string');
         $m->setReturnType('?array');
         $m->setBody(
             "static \$handler = null;\n" .
-            "\$handler ??= require __DIR__ . '/{$hash}_fq.php';\n" .
+            "\$handler ??= require __DIR__ . '/{$typePath}{$hash}_fq.php';\n" .
             "return \$handler->match(\$key);"
         );
 
@@ -447,7 +457,7 @@ class RedirectMatcherGenerator
         $m->setReturnType('?array');
         $m->setBody(
             "static \$handler = null;\n" .
-            "\$handler ??= require __DIR__ . '/{$hash}_tr.php';\n" .
+            "\$handler ??= require __DIR__ . '/{$typePath}{$hash}_tr.php';\n" .
             "return \$handler->match(\$seg);"
         );
 
@@ -456,7 +466,7 @@ class RedirectMatcherGenerator
         $m->setReturnType('array');
         $m->setBody(
             "static \$patterns = null;\n" .
-            "\$patterns ??= require __DIR__ . '/{$hash}_rq.php';\n" .
+            "\$patterns ??= require __DIR__ . '/{$typePath}{$hash}_rq.php';\n" .
             "return \$patterns;"
         );
 
@@ -465,7 +475,7 @@ class RedirectMatcherGenerator
         $m->setReturnType('array');
         $m->setBody(
             "static \$patterns = null;\n" .
-            "\$patterns ??= require __DIR__ . '/{$hash}_rf.php';\n" .
+            "\$patterns ??= require __DIR__ . '/{$typePath}{$hash}_rf.php';\n" .
             "return \$patterns;"
         );
 

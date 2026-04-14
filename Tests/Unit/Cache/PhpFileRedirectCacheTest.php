@@ -32,15 +32,29 @@ class PhpFileRedirectCacheTest extends UnitTestCase
 
     protected function tearDown(): void
     {
-        // Clean up temp directory
-        foreach (glob($this->tmpDir . '/*') ?: [] as $file) {
-            unlink($file);
-        }
-        if (is_dir($this->tmpDir)) {
-            rmdir($this->tmpDir);
-        }
+        $this->removeDirectory($this->tmpDir);
         unset($GLOBALS['SIM_ACCESS_TIME']);
         parent::tearDown();
+    }
+
+    private function removeDirectory(string $path): void
+    {
+        if (!is_dir($path)) {
+            return;
+        }
+        $entries = scandir($path) ?: [];
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            $full = $path . '/' . $entry;
+            if (is_dir($full)) {
+                $this->removeDirectory($full);
+            } else {
+                unlink($full);
+            }
+        }
+        rmdir($path);
     }
 
     // -------------------------------------------------------------------------
@@ -94,8 +108,15 @@ class PhpFileRedirectCacheTest extends UnitTestCase
         $host = 'atomic-' . uniqid();
         $this->writeAllFiles($host);
 
-        $files = glob($this->tmpDir . '/*.tmp.*') ?: [];
-        self::assertSame([], $files, 'No .tmp.* files should remain after writeSlug()');
+        // Search recursively for any leftover .tmp.* files (type files are in subdirs)
+        $tmpFiles = [];
+        $it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($this->tmpDir));
+        foreach ($it as $file) {
+            if ($file->isFile() && str_contains($file->getFilename(), '.tmp.')) {
+                $tmpFiles[] = $file->getPathname();
+            }
+        }
+        self::assertSame([], $tmpFiles, 'No .tmp.* files should remain after writeSlug()');
     }
 
     // -------------------------------------------------------------------------
@@ -153,6 +174,53 @@ class PhpFileRedirectCacheTest extends UnitTestCase
     }
 
     // -------------------------------------------------------------------------
+    // pruneOldVersions — keeps current, removes older version dirs
+    // -------------------------------------------------------------------------
+
+    #[Test]
+    public function pruneOldVersionsRemovesAllButTheKeptVersionDir(): void
+    {
+        $host = 'prune-' . uniqid();
+        $hash = md5($host);
+
+        // Write two versions of the cache.
+        $this->writeAllFiles($host, [], 'v_old');
+        $this->writeAllFiles($host, [], 'v_new');
+
+        // The main file now points to v_new (last write wins).
+        self::assertTrue($this->cache->exists($host));
+
+        // Both version dirs should exist at this point.
+        self::assertDirectoryExists($this->tmpDir . '/' . $hash . '/v_old');
+        self::assertDirectoryExists($this->tmpDir . '/' . $hash . '/v_new');
+
+        // Prune keeping v_new: v_old should be removed, v_new preserved.
+        $this->cache->pruneOldVersions($host, 'v_new');
+
+        self::assertDirectoryDoesNotExist($this->tmpDir . '/' . $hash . '/v_old');
+        self::assertDirectoryExists($this->tmpDir . '/' . $hash . '/v_new');
+
+        // The main file must still be loadable.
+        self::assertTrue($this->cache->exists($host));
+    }
+
+    #[Test]
+    public function readCurrentVersionDirReturnsVersionEmbeddedInMainFile(): void
+    {
+        $host = 'version-read-' . uniqid();
+
+        $this->writeAllFiles($host, [], 'my_version_123');
+
+        self::assertSame('my_version_123', $this->cache->readCurrentVersionDir($host));
+    }
+
+    #[Test]
+    public function readCurrentVersionDirReturnsNullWhenNoMainFileExists(): void
+    {
+        self::assertNull($this->cache->readCurrentVersionDir('no-cache.host'));
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
@@ -160,9 +228,9 @@ class PhpFileRedirectCacheTest extends UnitTestCase
      * Write all generated PHP files for $host to the cache using writeSlug().
      * This mirrors what PhpFileRedirectMatcherService does at runtime.
      */
-    private function writeAllFiles(string $host, array $redirects = []): void
+    private function writeAllFiles(string $host, array $redirects = [], string $versionDir = 'testversion'): void
     {
-        foreach ($this->generator->generateFiles($host, $redirects) as $slug => $code) {
+        foreach ($this->generator->generateFiles($host, $redirects, $versionDir) as $slug => $code) {
             $this->cache->writeSlug($slug, $code);
         }
     }

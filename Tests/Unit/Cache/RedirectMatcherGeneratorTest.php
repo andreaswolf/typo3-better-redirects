@@ -34,16 +34,31 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
     protected function tearDown(): void
     {
         foreach ($this->tmpDirs as $dir) {
-            foreach (glob($dir . '/*.php') ?: [] as $f) {
-                unlink($f);
-            }
-            if (is_dir($dir)) {
-                rmdir($dir);
-            }
+            $this->removeDirectory($dir);
         }
         $this->tmpDirs = [];
         unset($GLOBALS['SIM_ACCESS_TIME']);
         parent::tearDown();
+    }
+
+    private function removeDirectory(string $path): void
+    {
+        if (!is_dir($path)) {
+            return;
+        }
+        $entries = scandir($path) ?: [];
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            $full = $path . '/' . $entry;
+            if (is_dir($full)) {
+                $this->removeDirectory($full);
+            } else {
+                unlink($full);
+            }
+        }
+        rmdir($path);
     }
 
     // -------------------------------------------------------------------------
@@ -53,7 +68,7 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
     #[Test]
     public function generatedCodeIsValidPhp(): void
     {
-        foreach ($this->generator->generateFiles('validity.host.' . uniqid(), []) as $slug => $code) {
+        foreach ($this->generator->generateFiles('validity.host.' . uniqid(), [], 'testversion') as $slug => $code) {
             $stripped = preg_replace('/^<\?php\s*/i', '', $code);
             // eval in isolation; a parse error causes eval() to return false
             $result = @eval($stripped);
@@ -366,8 +381,14 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
         mkdir($tmpDir, 0755, true);
         $this->tmpDirs[] = $tmpDir;
 
-        foreach ($generator->generateFiles($host, $redirects) as $slug => $code) {
-            file_put_contents($tmpDir . '/' . $slug . '.php', $code);
+        $versionDir = 'testversion';
+        foreach ($generator->generateFiles($host, $redirects, $versionDir) as $slug => $code) {
+            $target = $tmpDir . '/' . $slug . '.php';
+            $dir = dirname($target);
+            if (!is_dir($dir)) {
+                mkdir($dir, 0755, true);
+            }
+            file_put_contents($target, $code);
         }
 
         $hash = md5($host);

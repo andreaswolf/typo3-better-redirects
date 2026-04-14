@@ -52,12 +52,22 @@ class PhpFileRedirectMatcherService
     private function getOrGenerateMatcher(string $host): GeneratedRedirectMatcherBase
     {
         if (!$this->fileCache->exists($host)) {
-            $redirects = $this->redirectCacheService->getRedirects($host);
-            foreach ($this->generator->generateFiles($host, $redirects) as $slug => $code) {
+            // Keep the currently active version dir alive while we write the new one
+            // so that any in-flight requests can still lazy-load its type files.
+            $currentVersionDir = $this->fileCache->readCurrentVersionDir($host);
+            if ($currentVersionDir !== null) {
+                $this->fileCache->pruneOldVersions($host, $currentVersionDir);
+            }
+
+            $newVersionDir = date('Ymd_His') . '_' . getmypid();
+            $redirects = $this->redirectCacheService->rebuildForHost($host);
+            foreach ($this->generator->generateFiles($host, $redirects, $newVersionDir) as $slug => $code) {
                 $this->fileCache->writeSlug($slug, $code);
             }
-            // The main file ({hash}.php) is the last slug yielded; its presence
-            // signals that all type files were written successfully.
+            // The main file ({hash}.php) is the last slug yielded; its atomic rename
+            // switches all new readers to the new version dir.  The old version dir
+            // ($currentVersionDir) remains on disk and will be pruned at the start of
+            // the next cache write.
         }
         return $this->fileCache->load($host);
     }
