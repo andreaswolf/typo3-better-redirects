@@ -5,11 +5,13 @@ declare(strict_types=1);
 use a9f\BetterRedirects\Cache\MatchResultCache;
 use a9f\BetterRedirects\Cache\MatchResultCacheInterface;
 use a9f\BetterRedirects\Cache\RedirectMatcherGenerator;
+use a9f\BetterRedirects\Service\CachingRedirectCacheService;
 use a9f\BetterRedirects\Service\CachingRedirectService;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use TYPO3\CMS\Core\Cache\CacheManager;
 use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
+use TYPO3\CMS\Redirects\Service\RedirectCacheService;
 use TYPO3\CMS\Redirects\Service\RedirectService;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
@@ -43,4 +45,9 @@ return function (ContainerConfigurator $containerConfigurator, ContainerBuilder 
     // RedirectHandler injects RedirectService by concrete class name, so we alias it.
     // Must be public so it can be retrieved from the container where needed.
     $services->alias(RedirectService::class, CachingRedirectService::class)->public();
+
+    // Replace RedirectCacheService with our subclass so that every rebuildForHost call
+    // (from DataHandlerCacheFlushingHook, SlugService, etc.) also regenerates the PHP
+    // file cache.  Must be public so GeneralUtility::makeInstance() resolves it.
+    $services->alias(RedirectCacheService::class, CachingRedirectCacheService::class)->public();
 };

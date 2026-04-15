@@ -5,17 +5,18 @@ declare(strict_types=1);
 namespace a9f\BetterRedirects\Hook;
 
 use a9f\BetterRedirects\Cache\MatchResultCacheInterface;
-use a9f\BetterRedirects\Cache\PhpFileRedirectCache;
 use TYPO3\CMS\Core\Database\Connection;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 /**
- * Flushes the redirect match result cache when a sys_redirect record changes.
+ * Flushes the per-request result cache (Layer 1) when a sys_redirect record changes.
  *
  * Mirrors the logic of DataHandlerCacheFlushingHook from cms-redirects, but invalidates
- * our result cache entries instead of rebuilding the redirect index.
+ * the MatchResultCache instead of rebuilding the redirect index.  The PHP file cache
+ * (Layer 2) is rebuilt by CachingRedirectCacheService::rebuildForHost, which is called
+ * by DataHandlerCacheFlushingHook via the RedirectCacheService alias.
  */
 class DataHandlerResultCacheFlushingHook
 {
@@ -33,20 +34,17 @@ class DataHandlerResultCacheFlushingHook
         }
 
         $matchResultCache = GeneralUtility::makeInstance(MatchResultCacheInterface::class);
-        $phpFileCache = GeneralUtility::makeInstance(PhpFileRedirectCache::class);
         $sourceHosts = $this->resolveSourceHosts($parameters, $dataHandler);
 
         if ($sourceHosts !== []) {
             foreach (array_unique($sourceHosts) as $sourceHost) {
                 $matchResultCache->invalidate($sourceHost);
-                $phpFileCache->invalidate($sourceHost);
             }
             return;
         }
 
         // Safety fallback: flush all result cache entries when source hosts are unknown
         $matchResultCache->invalidate(null);
-        $phpFileCache->invalidate(null);
     }
 
     private function resolveSourceHosts(array $parameters, DataHandler $dataHandler): array
