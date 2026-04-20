@@ -197,6 +197,8 @@ final class CompareRedirectsCommand extends Command
                     [$i, $site] = explode('_', $key, 2);
                     $chunkResults[(int)$i][$site] = [
                         'status' => 0,
+                        'error' => get_class($reason),
+                        'reason' => $reason->getMessage(),
                         'location' => '',
                     ];
                 },
@@ -218,7 +220,9 @@ final class CompareRedirectsCommand extends Command
                         'uid' => $redirect['uid'],
                         'source_path' => $redirect['source_path'],
                         'baseline_status' => $baseline['status'],
+                        'baseline_error' => $baseline['status'] > 0 ?: (sprintf('%s - %s', $baseline['error'], $baseline['reason'])),
                         'test_status' => $test['status'],
+                        'test_error' => $test['status'] > 0 ?: (sprintf('%s - %s', $test['error'], $test['reason'])),
                         'baseline_location' => $baselineLocation,
                         'test_location' => $testLocation,
                     ];
@@ -253,8 +257,8 @@ final class CompareRedirectsCommand extends Command
             $table->addRow([
                 $diff['uid'],
                 $diff['source_path'],
-                $diff['baseline_status'] ?: '<error>ERR</error>',
-                $diff['test_status'] ?: '<error>ERR</error>',
+                $diff['baseline_status'] ?: '<error>ERR - ' . $diff['baseline_error'] . '</error>',
+                $diff['test_status'] ?: '<error>ERR - ' . $diff['test_error'] . '</error>',
                 $diff['baseline_location'],
                 $diff['test_location'],
             ]);
