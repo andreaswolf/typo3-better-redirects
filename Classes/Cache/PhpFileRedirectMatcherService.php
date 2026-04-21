@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace a9f\BetterRedirects\Cache;
 
+use TYPO3\CMS\Core\Locking\ResourceMutex;
 use TYPO3\CMS\Redirects\Service\RedirectCacheService;
 
 /**
@@ -19,10 +20,13 @@ use TYPO3\CMS\Redirects\Service\RedirectCacheService;
  */
 class PhpFileRedirectMatcherService
 {
+    private const LOCK_SCOPE = 'better_redirects_build';
+
     public function __construct(
         private readonly RedirectCacheService $redirectCacheService,
         private readonly RedirectMatcherGenerator $generator,
         private readonly PhpFileRedirectCache $fileCache,
+        private readonly ResourceMutex $mutex,
     ) {}
 
     /**
@@ -51,7 +55,19 @@ class PhpFileRedirectMatcherService
 
     private function getOrGenerateMatcher(string $host): GeneratedRedirectMatcherBase
     {
-        if (!$this->fileCache->exists($host)) {
+        if ($this->fileCache->exists($host)) {
+            return $this->fileCache->load($host);
+        }
+
+        // Serialize concurrent rebuild attempts for the same host. acquireLock() polls
+        // with 20 ms backoff until the previous builder releases, then returns true.
+        // On true (we waited): another process just finished — re-check before rebuilding.
+        $hadToWait = $this->mutex->acquireLock(self::LOCK_SCOPE, md5($host));
+        try {
+            if ($hadToWait && $this->fileCache->exists($host)) {
+                return $this->fileCache->load($host);
+            }
+
             // Keep the currently active version dir alive while we write the new one
             // so that any in-flight requests can still lazy-load its type files.
             $currentVersionDir = $this->fileCache->readCurrentVersionDir($host);
@@ -68,7 +84,10 @@ class PhpFileRedirectMatcherService
             // switches all new readers to the new version dir.  The old version dir
             // ($currentVersionDir) remains on disk and will be pruned at the start of
             // the next cache write.
+        } finally {
+            $this->mutex->releaseLock(self::LOCK_SCOPE);
         }
+
         return $this->fileCache->load($host);
     }
 }
