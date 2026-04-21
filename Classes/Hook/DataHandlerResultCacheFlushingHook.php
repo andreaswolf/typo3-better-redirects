@@ -11,10 +11,12 @@ use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 /**
- * Flushes the redirect match result cache when a sys_redirect record changes.
+ * Flushes the per-request result cache (Layer 1) when a sys_redirect record changes.
  *
  * Mirrors the logic of DataHandlerCacheFlushingHook from cms-redirects, but invalidates
- * our result cache entries instead of rebuilding the redirect index.
+ * the MatchResultCache instead of rebuilding the redirect index.  The PHP file cache
+ * (Layer 2) is rebuilt by CachingRedirectCacheService::rebuildForHost, which is called
+ * by DataHandlerCacheFlushingHook via the RedirectCacheService alias.
  */
 class DataHandlerResultCacheFlushingHook
 {

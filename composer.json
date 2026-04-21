@@ -2,9 +2,21 @@
     "name": "a9f/typo3-better-redirects",
     "description": "Improved redirects handling for TYPO3, including optimized caching for large numbers of redirects",
     "type": "typo3-cms-extension",
+    "authors": [
+        {
+            "name": "Andreas Wolf",
+            "email": "dev@a-w.io"
+        }
+    ],
     "require": {
+        "nette/php-generator": "^4.1",
         "typo3/cms-core": "^13.4",
         "typo3/cms-redirects": "^13.4"
+    },
+    "require-dev": {
+        "ergebnis/composer-normalize": "^2.50",
+        "phpunit/phpunit": "^12.5",
+        "typo3/testing-framework": "^9.5"
     },
     "autoload": {
         "psr-4": {
@@ -16,15 +28,17 @@
             "a9f\\BetterRedirects\\": "Tests/"
         }
     },
+    "config": {
+        "allow-plugins": {
+            "ergebnis/composer-normalize": true,
+            "typo3/class-alias-loader": true,
+            "typo3/cms-composer-installers": true
+        },
+        "sort-packages": true
+    },
     "extra": {
         "typo3/cms": {
             "extension-key": "better_redirects"
         }
-    },
-    "authors": [
-        {
-            "name": "Andreas Wolf",
-            "email": "dev@a-w.io"
-        }
-    ]
+    }
 }
