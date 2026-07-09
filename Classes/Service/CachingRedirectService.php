@@ -11,6 +11,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use TYPO3\CMS\Core\Cache\Frontend\PhpFrontend;
 use TYPO3\CMS\Core\LinkHandling\LinkService;
+use TYPO3\CMS\Core\LinkHandling\TypoLinkCodecService;
 use TYPO3\CMS\Core\Site\SiteFinder;
 use TYPO3\CMS\Core\TypoScript\FrontendTypoScriptFactory;
 use TYPO3\CMS\Frontend\Page\PageInformationFactory;
@@ -20,7 +21,7 @@ use TYPO3\CMS\Redirects\Service\RedirectService;
 /**
  * @phpstan-import-type RedirectRow from \a9f\BetterRedirects\Cache\GeneratedRedirectMatcherBase
  */
-class CachingRedirectService extends RedirectService
+readonly class CachingRedirectService extends RedirectService
 {
     public function __construct(
         RedirectCacheService $redirectCacheService,
@@ -33,8 +34,9 @@ class CachingRedirectService extends RedirectService
         #[Autowire(service: 'cache.typoscript')]
         PhpFrontend $typoScriptCache,
         LoggerInterface $logger,
-        private readonly MatchResultCacheInterface $matchResultCache,
-        private readonly PhpFileRedirectMatcherService $phpFileMatcher,
+        TypoLinkCodecService $typoLinkCodecService,
+        private MatchResultCacheInterface $matchResultCache,
+        private PhpFileRedirectMatcherService $phpFileMatcher,
     ) {
         parent::__construct(
             $redirectCacheService,
@@ -45,6 +47,7 @@ class CachingRedirectService extends RedirectService
             $frontendTypoScriptFactory,
             $typoScriptCache,
             $logger,
+            $typoLinkCodecService,
         );
     }
 

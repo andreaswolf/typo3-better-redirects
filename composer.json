@@ -11,8 +11,8 @@
     "require": {
         "php": "^8.3",
         "nette/php-generator": "^4.1",
-        "typo3/cms-core": "^13.4",
-        "typo3/cms-redirects": "^13.4"
+        "typo3/cms-core": "^14.3",
+        "typo3/cms-redirects": "^14.3"
     },
     "require-dev": {
         "ergebnis/composer-normalize": "^2.50",
