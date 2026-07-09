@@ -15,6 +15,7 @@
     },
     "require-dev": {
         "ergebnis/composer-normalize": "^2.50",
+        "phpstan/phpstan": "^2.2",
         "phpunit/phpunit": "^12.5",
         "typo3/testing-framework": "^9.5"
     },
@@ -40,5 +41,9 @@
         "typo3/cms": {
             "extension-key": "better_redirects"
         }
+    },
+    "scripts": {
+        "analyze:php": "phpstan --memory-limit=256M",
+        "test:php:unit": "phpunit --config phpunit.xml"
     }
 }
