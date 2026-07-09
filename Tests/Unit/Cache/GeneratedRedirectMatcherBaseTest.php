@@ -11,6 +11,8 @@ use TYPO3\TestingFramework\Core\Unit\UnitTestCase;
 /**
  * Tests the matching orchestration logic in GeneratedRedirectMatcherBase via
  * a hand-written concrete subclass.
+ *
+ * @phpstan-import-type RedirectRow from \a9f\BetterRedirects\Cache\GeneratedRedirectMatcherBase
  */
 class GeneratedRedirectMatcherBaseTest extends UnitTestCase
 {
@@ -49,6 +51,7 @@ class GeneratedRedirectMatcherBaseTest extends UnitTestCase
         $matcher = $this->buildMatcher(flat: ['/page/' => [$disabled, $enabled]]);
         $result = $matcher->match('/page', '');
 
+        self::assertNotNull($result);
         self::assertSame(2, $result['uid']);
     }
 
@@ -59,7 +62,9 @@ class GeneratedRedirectMatcherBaseTest extends UnitTestCase
         $immediate = $this->makeRedirect(2, starttime: 0);
 
         $matcher = $this->buildMatcher(flat: ['/page/' => [$future, $immediate]]);
-        self::assertSame(2, $matcher->match('/page', '')['uid']);
+        $result = $matcher->match('/page', '');
+        self::assertNotNull($result);
+        self::assertSame(2, $result['uid']);
     }
 
     #[Test]
@@ -69,7 +74,9 @@ class GeneratedRedirectMatcherBaseTest extends UnitTestCase
         $active  = $this->makeRedirect(2, endtime: 0);
 
         $matcher = $this->buildMatcher(flat: ['/page/' => [$expired, $active]]);
-        self::assertSame(2, $matcher->match('/page', '')['uid']);
+        $result = $matcher->match('/page', '');
+        self::assertNotNull($result);
+        self::assertSame(2, $result['uid']);
     }
 
     #[Test]
@@ -77,7 +84,9 @@ class GeneratedRedirectMatcherBaseTest extends UnitTestCase
     {
         $redirect = $this->makeRedirect(42, starttime: $this->now - 60, endtime: $this->now + 60);
         $matcher  = $this->buildMatcher(flat: ['/timed/' => [$redirect]]);
-        self::assertSame(42, $matcher->match('/timed', '')['uid']);
+        $result = $matcher->match('/timed', '');
+        self::assertNotNull($result);
+        self::assertSame(42, $result['uid']);
     }
 
     // -------------------------------------------------------------------------
@@ -90,7 +99,9 @@ class GeneratedRedirectMatcherBaseTest extends UnitTestCase
         $redirect = $this->makeRedirect(5);
         $matcher  = $this->buildMatcher(flat: ['/über-uns/' => [$redirect]]);
         // %C3%BC = ü
-        self::assertSame(5, $matcher->match('/%C3%BCber-uns', '')['uid']);
+        $result = $matcher->match('/%C3%BCber-uns', '');
+        self::assertNotNull($result);
+        self::assertSame(5, $result['uid']);
     }
 
     #[Test]
@@ -99,8 +110,13 @@ class GeneratedRedirectMatcherBaseTest extends UnitTestCase
         $redirect = $this->makeRedirect(7);
         $matcher  = $this->buildMatcher(flat: ['/news/' => [$redirect]]);
 
-        self::assertSame(7, $matcher->match('/news', '')['uid']);
-        self::assertSame(7, $matcher->match('/news/', '')['uid']);
+        $resultWithoutSlash = $matcher->match('/news', '');
+        self::assertNotNull($resultWithoutSlash);
+        self::assertSame(7, $resultWithoutSlash['uid']);
+
+        $resultWithSlash = $matcher->match('/news/', '');
+        self::assertNotNull($resultWithSlash);
+        self::assertSame(7, $resultWithSlash['uid']);
     }
 
     // -------------------------------------------------------------------------
@@ -118,7 +134,9 @@ class GeneratedRedirectMatcherBaseTest extends UnitTestCase
             withQuery: ['/page?ref=1' => [$withQueryRedirect]]
         );
 
-        self::assertSame(10, $matcher->match('/page', 'ref=1')['uid']);
+        $result = $matcher->match('/page', 'ref=1');
+        self::assertNotNull($result);
+        self::assertSame(10, $result['uid']);
     }
 
     #[Test]
@@ -132,7 +150,9 @@ class GeneratedRedirectMatcherBaseTest extends UnitTestCase
             regexFlat: ['/^\/article$/' => [$regexRedirect]]
         );
 
-        self::assertSame(20, $matcher->match('/article', '')['uid']);
+        $result = $matcher->match('/article', '');
+        self::assertNotNull($result);
+        self::assertSame(20, $result['uid']);
     }
 
     #[Test]
@@ -146,7 +166,9 @@ class GeneratedRedirectMatcherBaseTest extends UnitTestCase
             regexFlat: ['/^\/search/' => [$flatRedirect]]
         );
 
-        self::assertSame(30, $matcher->match('/search', 'q=foo')['uid']);
+        $result = $matcher->match('/search', 'q=foo');
+        self::assertNotNull($result);
+        self::assertSame(30, $result['uid']);
     }
 
     // -------------------------------------------------------------------------
@@ -160,7 +182,9 @@ class GeneratedRedirectMatcherBaseTest extends UnitTestCase
         // TYPO3 can store paths as /page/?query
         $matcher  = $this->buildMatcher(withQuery: ['/page/?ref=1' => [$redirect]]);
 
-        self::assertSame(40, $matcher->match('/page', 'ref=1')['uid']);
+        $result = $matcher->match('/page', 'ref=1');
+        self::assertNotNull($result);
+        self::assertSame(40, $result['uid']);
     }
 
     // -------------------------------------------------------------------------
@@ -176,7 +200,9 @@ class GeneratedRedirectMatcherBaseTest extends UnitTestCase
 
         // The path+query string "/old/page?foo=bar" should NOT match "^\/old\/.*$" because
         // of the query, but the second pass tests against path only and SHOULD match.
-        self::assertSame(50, $matcher->match('/old/page', 'foo=bar')['uid']);
+        $result = $matcher->match('/old/page', 'foo=bar');
+        self::assertNotNull($result);
+        self::assertSame(50, $result['uid']);
     }
 
     #[Test]
@@ -198,10 +224,10 @@ class GeneratedRedirectMatcherBaseTest extends UnitTestCase
     // -------------------------------------------------------------------------
 
     /**
-     * @param array<string, list<array<string, mixed>>> $flat         path → [redirect,...]
-     * @param array<string, list<array<string, mixed>>> $withQuery    path?query → [redirect,...]
-     * @param array<string, list<array<string, mixed>>> $regexFlat    pattern → [redirect,...]
-     * @param array<string, list<array<string, mixed>>> $regexQueryParams pattern → [redirect,...]
+     * @param array<string, list<RedirectRow>> $flat         path → [redirect,...]
+     * @param array<string, list<RedirectRow>> $withQuery    path?query → [redirect,...]
+     * @param array<string, list<RedirectRow>> $regexFlat    pattern → [redirect,...]
+     * @param array<string, list<RedirectRow>> $regexQueryParams pattern → [redirect,...]
      */
     private function buildMatcher(
         array $flat = [],
@@ -209,48 +235,11 @@ class GeneratedRedirectMatcherBaseTest extends UnitTestCase
         array $regexFlat = [],
         array $regexQueryParams = []
     ): GeneratedRedirectMatcherBase {
-        return new class($flat, $withQuery, $regexFlat, $regexQueryParams) extends GeneratedRedirectMatcherBase {
-            public function __construct(
-                private readonly array $flatPaths,
-                private readonly array $withQueryPaths,
-                private readonly array $regexFlatPatterns,
-                private readonly array $regexQueryParamsPatterns,
-            ) {}
-
-            protected function matchFlatWithQuery(string $key): ?array
-            {
-                if (isset($this->withQueryPaths[$key])) {
-                    return $this->firstActive($this->withQueryPaths[$key]);
-                }
-                return null;
-            }
-
-            protected function matchTrieRoot(array $seg): ?array
-            {
-                // Simple linear scan for the test double — correctness, not performance.
-                $path = '/' . implode('/', $seg) . '/';
-                // Normalise to match stored format: rtrim+slash
-                $normalised = rtrim($path, '/') . '/';
-                if (isset($this->flatPaths[$normalised])) {
-                    return $this->firstActive($this->flatPaths[$normalised]);
-                }
-                return null;
-            }
-
-            protected function matchRegexQueryParams(): array
-            {
-                return $this->regexQueryParamsPatterns;
-            }
-
-            protected function matchRegexFlat(): array
-            {
-                return $this->regexFlatPatterns;
-            }
-        };
+        return new TestRedirectMatcher($flat, $withQuery, $regexFlat, $regexQueryParams);
     }
 
     /**
-     * @return array<string, mixed>
+     * @return RedirectRow
      */
     private function makeRedirect(
         int $uid,
@@ -259,11 +248,72 @@ class GeneratedRedirectMatcherBaseTest extends UnitTestCase
         int $endtime = 0
     ): array {
         return [
-            'uid'        => $uid,
-            'disabled'   => $disabled ? 1 : 0,
-            'starttime'  => $starttime,
-            'endtime'    => $endtime,
-            'target'     => 'https://example.com/target',
+            'uid'                      => $uid,
+            'pid'                      => 0,
+            'source_host'              => '*',
+            'source_path'              => '/',
+            'target'                   => 'https://example.com/target',
+            'target_statuscode'        => 307,
+            'force_https'              => 0,
+            'keep_query_parameters'    => 0,
+            'respect_query_parameters' => 0,
+            'is_regexp'                => 0,
+            'disabled'                 => $disabled ? 1 : 0,
+            'starttime'                => $starttime,
+            'endtime'                  => $endtime,
+            'hitcount'                 => 0,
         ];
+    }
+}
+
+/**
+ * Hand-written concrete matcher used as a test double for exercising the
+ * matching orchestration logic in GeneratedRedirectMatcherBase.
+ *
+ * @phpstan-import-type RedirectRow from GeneratedRedirectMatcherBase
+ */
+final class TestRedirectMatcher extends GeneratedRedirectMatcherBase
+{
+    /**
+     * @param array<string, list<RedirectRow>> $flatPaths
+     * @param array<string, list<RedirectRow>> $withQueryPaths
+     * @param array<string, list<RedirectRow>> $regexFlatPatterns
+     * @param array<string, list<RedirectRow>> $regexQueryParamsPatterns
+     */
+    public function __construct(
+        private readonly array $flatPaths,
+        private readonly array $withQueryPaths,
+        private readonly array $regexFlatPatterns,
+        private readonly array $regexQueryParamsPatterns,
+    ) {}
+
+    protected function matchFlatWithQuery(string $key): ?array
+    {
+        if (isset($this->withQueryPaths[$key])) {
+            return $this->firstActive($this->withQueryPaths[$key]);
+        }
+        return null;
+    }
+
+    protected function matchTrieRoot(array $seg): ?array
+    {
+        // Simple linear scan for the test double — correctness, not performance.
+        $path = '/' . implode('/', $seg) . '/';
+        // Normalise to match stored format: rtrim+slash
+        $normalised = rtrim($path, '/') . '/';
+        if (isset($this->flatPaths[$normalised])) {
+            return $this->firstActive($this->flatPaths[$normalised]);
+        }
+        return null;
+    }
+
+    protected function matchRegexQueryParams(): array
+    {
+        return $this->regexQueryParamsPatterns;
+    }
+
+    protected function matchRegexFlat(): array
+    {
+        return $this->regexFlatPatterns;
     }
 }

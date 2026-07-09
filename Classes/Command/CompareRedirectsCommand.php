@@ -7,9 +7,7 @@ namespace a9f\BetterRedirects\Command;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Pool;
-use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Request;
-use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -73,7 +71,6 @@ final class CompareRedirectsCommand extends Command
         $timeout = (int)$input->getOption('timeout');
         $concurrency = max(1, (int)$input->getOption('concurrency'));
 
-        $httpFactory = new HttpFactory();
         $client = new Client([
             'allow_redirects' => false,
             'timeout' => $timeout,
@@ -88,7 +85,6 @@ final class CompareRedirectsCommand extends Command
             $baselineUrl,
             $testUrl,
             $client,
-            $httpFactory,
             $concurrency,
             $progressBar,
         );
@@ -151,19 +147,25 @@ final class CompareRedirectsCommand extends Command
 
         shuffle($rows);
 
-        return array_slice($rows, 0, $sampleSize);
+        return array_map(
+            static fn (array $row): array => [
+                'uid' => (int)$row['uid'],
+                'source_host' => (string)$row['source_host'],
+                'source_path' => (string)$row['source_path'],
+            ],
+            array_slice($rows, 0, $sampleSize),
+        );
     }
 
     /**
      * @param list<array{uid: int, source_host: string, source_path: string}> $redirects
-     * @return list<array{uid: int, source_path: string, baseline_status: int, test_status: int, baseline_location: string, test_location: string}>
+     * @return list<array{uid: int, source_path: string, baseline_status: int, test_status: int, baseline_error: string|null, test_error: string|null, baseline_location: string, test_location: string}>
      */
     private function runComparisons(
         array $redirects,
         string $baselineUrl,
         string $testUrl,
         Client $client,
-        RequestFactoryInterface $requestFactory,
         int $concurrency,
         ProgressBar $progressBar,
     ): array {
@@ -171,12 +173,13 @@ final class CompareRedirectsCommand extends Command
 
         // Build one Guzzle async request per redirect per site.
         // We send them in pairs to keep baseline/test results aligned.
-        $chunks = array_chunk($redirects, $concurrency);
+        $chunkSize = max(1, $concurrency);
+        $chunks = array_chunk($redirects, $chunkSize);
 
         foreach ($chunks as $chunk) {
             $chunkResults = [];
 
-            $requests = static function () use ($chunk, $baselineUrl, $testUrl, $requestFactory): \Generator {
+            $requests = static function () use ($chunk, $baselineUrl, $testUrl): \Generator {
                 foreach ($chunk as $i => $redirect) {
                     $path = $redirect['source_path'];
                     yield "{$i}_baseline" => new Request('GET', $baselineUrl . $path);
@@ -209,20 +212,20 @@ final class CompareRedirectsCommand extends Command
             foreach ($chunk as $i => $redirect) {
                 $progressBar->advance();
 
-                $baseline = $chunkResults[$i]['baseline'] ?? ['status' => 0, 'location' => ''];
-                $test = $chunkResults[$i]['test'] ?? ['status' => 0, 'location' => ''];
+                $baseline = $chunkResults[$i]['baseline'] ?? ['status' => 0, 'location' => '', 'error' => 'RequestNotSent', 'reason' => 'No response received'];
+                $test = $chunkResults[$i]['test'] ?? ['status' => 0, 'location' => '', 'error' => 'RequestNotSent', 'reason' => 'No response received'];
 
-                $baselineLocation = $this->normalizeLocation($baseline['location'], $baselineUrl);
-                $testLocation = $this->normalizeLocation($test['location'], $testUrl);
+                $baselineLocation = $this->normalizeLocation((string)$baseline['location'], $baselineUrl);
+                $testLocation = $this->normalizeLocation((string)$test['location'], $testUrl);
 
                 if ($baseline['status'] !== $test['status'] || $baselineLocation !== $testLocation) {
                     $differences[] = [
                         'uid' => $redirect['uid'],
                         'source_path' => $redirect['source_path'],
                         'baseline_status' => $baseline['status'],
-                        'baseline_error' => $baseline['status'] > 0 ?: (sprintf('%s - %s', $baseline['error'], $baseline['reason'])),
+                        'baseline_error' => $baseline['status'] > 0 ? null : sprintf('%s - %s', $baseline['error'], $baseline['reason']),
                         'test_status' => $test['status'],
-                        'test_error' => $test['status'] > 0 ?: (sprintf('%s - %s', $test['error'], $test['reason'])),
+                        'test_error' => $test['status'] > 0 ? null : sprintf('%s - %s', $test['error'], $test['reason']),
                         'baseline_location' => $baselineLocation,
                         'test_location' => $testLocation,
                     ];
@@ -246,7 +249,7 @@ final class CompareRedirectsCommand extends Command
     }
 
     /**
-     * @param list<array{uid: int, source_path: string, baseline_status: int, test_status: int, baseline_location: string, test_location: string}> $differences
+     * @param list<array{uid: int, source_path: string, baseline_status: int, test_status: int, baseline_error: string|null, test_error: string|null, baseline_location: string, test_location: string}> $differences
      */
     private function renderDifferencesTable(OutputInterface $output, array $differences): void
     {

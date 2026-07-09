@@ -9,6 +9,9 @@ use TYPO3\CMS\Core\Cache\CacheManager;
 use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
+/**
+ * @phpstan-import-type RedirectRow from \a9f\BetterRedirects\Cache\GeneratedRedirectMatcherBase
+ */
 class MatchResultCache implements MatchResultCacheInterface
 {
     private const TAG_ALL = 'tx_redirects';
@@ -24,11 +27,17 @@ class MatchResultCache implements MatchResultCacheInterface
         $this->cache = $cache ?? GeneralUtility::makeInstance(CacheManager::class)->getCache('better_redirects');
     }
 
+    /**
+     * @return RedirectRow|false|null
+     */
     public function get(string $domain, string $path, string $query): false|null|array
     {
         return $this->cache->get($this->buildCacheKey($domain, $path, $query));
     }
 
+    /**
+     * @param RedirectRow|null $redirect
+     */
     public function set(string $domain, string $path, string $query, ?array $redirect, int $lifetime): void
     {
         $this->cache->set(

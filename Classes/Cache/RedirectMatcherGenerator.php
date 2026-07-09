@@ -8,6 +8,7 @@ use Nette\PhpGenerator\ClassType;
 use Nette\PhpGenerator\Dumper;
 use Nette\PhpGenerator\PhpFile;
 use Nette\PhpGenerator\PsrPrinter;
+use Nette\PhpGenerator\Visibility;
 
 /**
  * Generates PHP source files that implement redirect matching logic compiled
@@ -38,11 +39,13 @@ use Nette\PhpGenerator\PsrPrinter;
  * group (regex matching only runs when flat/trie matching has already failed).
  *
  * @param array{
- *     flat?: array<string, array<int, array<string, mixed>>>,
- *     respect_query_parameters?: array<string, array<int, array<string, mixed>>>,
- *     regexp_flat?: array<string, array<int, array<string, mixed>>>,
- *     regexp_query_parameters?: array<string, array<int, array<string, mixed>>>,
+ *     flat?: array<string, array<int, RedirectRow>>,
+ *     respect_query_parameters?: array<string, array<int, RedirectRow>>,
+ *     regexp_flat?: array<string, array<int, RedirectRow>>,
+ *     regexp_query_parameters?: array<string, array<int, RedirectRow>>,
  * } $redirects
+ *
+ * @phpstan-import-type RedirectRow from \a9f\BetterRedirects\Cache\GeneratedRedirectMatcherBase
  */
 class RedirectMatcherGenerator
 {
@@ -62,10 +65,10 @@ class RedirectMatcherGenerator
      * must write each slug immediately to keep peak memory low.
      *
      * @param array{
-     *     flat?: array<string, array<int, array<string, mixed>>>,
-     *     respect_query_parameters?: array<string, array<int, array<string, mixed>>>,
-     *     regexp_flat?: array<string, array<int, array<string, mixed>>>,
-     *     regexp_query_parameters?: array<string, array<int, array<string, mixed>>>,
+     *     flat?: array<string, array<int, RedirectRow>>,
+     *     respect_query_parameters?: array<string, array<int, RedirectRow>>,
+     *     regexp_flat?: array<string, array<int, RedirectRow>>,
+     *     regexp_query_parameters?: array<string, array<int, RedirectRow>>,
      * } $redirects
      * @return \Generator<string, string>
      */
@@ -101,7 +104,10 @@ class RedirectMatcherGenerator
     // Flat-with-query (respect_query_parameters)
     // -------------------------------------------------------------------------
 
-    /** @return \Generator<string, string> */
+    /**
+     * @param array<string, array<int, RedirectRow>> $withQuery
+     * @return \Generator<string, string>
+     */
     private function yieldFlatQueryFiles(string $hash, array $withQuery, string $typePrefix): \Generator
     {
         $count = $this->countBucket($withQuery);
@@ -126,6 +132,8 @@ class RedirectMatcherGenerator
     /**
      * Generate an anonymous-class file that matches a single exact path+query key.
      * Used both for the non-sharded case and for individual shard files.
+     *
+     * @param array<string, array<int, RedirectRow>> $withQuery
      */
     private function generateFlatQueryFile(array $withQuery): string
     {
@@ -174,10 +182,13 @@ class RedirectMatcherGenerator
     // Trie (flat path redirects)
     // -------------------------------------------------------------------------
 
-    /** @return \Generator<string, string> */
+    /**
+     * @param array<string, array<int, RedirectRow>> $flat
+     * @return \Generator<string, string>
+     */
     private function yieldTrieFiles(string $hash, array $flat, string $typePrefix): \Generator
     {
-        $trie = [];
+        $trie = new RedirectTrieNode();
         foreach ($flat as $storedPath => $redirectsByUid) {
             $segments = explode('/', trim((string)$storedPath, '/'));
             $this->insertIntoTrie($trie, $segments, array_values($redirectsByUid));
@@ -192,10 +203,12 @@ class RedirectMatcherGenerator
         yield from $this->yieldTrieShardFiles($hash, $trie, '', 0, $typePrefix, $rootSlug);
     }
 
-    /** @return \Generator<string, string> */
+    /**
+     * @return \Generator<string, string>
+     */
     private function yieldTrieShardFiles(
         string $hash,
-        array $trieNode,
+        RedirectTrieNode $trieNode,
         string $pathPrefix,
         int $depth,
         string $typePrefix,
@@ -209,21 +222,18 @@ class RedirectMatcherGenerator
         $segToBasenameSlug = [];
         $smallChildren = [];
 
-        foreach ($trieNode as $segment => $childNode) {
-            if ($segment === '__redirects') {
-                continue;
-            }
+        foreach ($trieNode->children as $segment => $childNode) {
             if ($this->countTrieNode($childNode) > $this->splitThreshold) {
                 // Large child: recurse so it gets its own dispatcher + shards.
-                $childPrefix = $pathPrefix === '' ? (string)$segment : $pathPrefix . '/' . (string)$segment;
+                $childPrefix = $pathPrefix === '' ? $segment : $pathPrefix . '/' . $segment;
                 $childSlug = $hash . '_tr_' . md5($childPrefix);
-                $segToBasenameSlug[(string)$segment] = $childSlug;
+                $segToBasenameSlug[$segment] = $childSlug;
                 yield from $this->yieldTrieShardFiles(
                     $hash, $childNode, $childPrefix, $depth + 1, $typePrefix, $childSlug
                 );
             } else {
                 // Small child: collect for bin-packing to avoid one-redirect-per-file.
-                $smallChildren[(string)$segment] = $childNode;
+                $smallChildren[$segment] = $childNode;
             }
         }
 
@@ -233,7 +243,9 @@ class RedirectMatcherGenerator
             foreach (array_keys($binChildren) as $segment) {
                 $segToBasenameSlug[$segment] = $binSlug;
             }
-            yield $typePrefix . $binSlug => $this->generateTrieNodeFile($binChildren, $pathPrefix, $depth);
+            $binNode = new RedirectTrieNode();
+            $binNode->children = $binChildren;
+            yield $typePrefix . $binSlug => $this->generateTrieNodeFile($binNode, $pathPrefix, $depth);
         }
 
         yield $typePrefix . $slug => $this->generateTrieDispatcherAtDepth($trieNode, $depth, $segToBasenameSlug);
@@ -243,7 +255,8 @@ class RedirectMatcherGenerator
      * Greedily pack small trie children into bins of at most $splitThreshold
      * redirects each.  Returns a list of bins, each bin being [segment => childNode].
      *
-     * @return array<int, array<string, array>>
+     * @param array<string, RedirectTrieNode> $children
+     * @return array<int, array<string, RedirectTrieNode>>
      */
     private function packChildrenIntoBins(array $children): array
     {
@@ -262,13 +275,14 @@ class RedirectMatcherGenerator
                 $currentBin = [];
                 $currentCount = 0;
             }
-            $currentBin[(string)$segment] = $childNode;
+            $currentBin[$segment] = $childNode;
             $currentCount += $childCount;
         }
 
-        if ($currentBin !== []) {
-            $bins[] = $currentBin;
-        }
+        // $children is non-empty (checked above) and every loop iteration
+        // unconditionally assigns into $currentBin, so it can never be empty
+        // here — the trailing bin always needs to be appended.
+        $bins[] = $currentBin;
 
         return $bins;
     }
@@ -277,7 +291,7 @@ class RedirectMatcherGenerator
      * Generate a leaf shard file for any trie node at any depth.
      * Used for both the non-sharded root (depth=0) and recursively split shards.
      */
-    private function generateTrieNodeFile(array $trieNode, string $pathPrefix, int $depth): string
+    private function generateTrieNodeFile(RedirectTrieNode $trieNode, string $pathPrefix, int $depth): string
     {
         $class = new ClassType(null);
         $this->addTrieMethodToClass($class, 'match', 'public', $pathPrefix, $trieNode, $depth);
@@ -289,14 +303,19 @@ class RedirectMatcherGenerator
      * Any __redirects at this node are handled inline via a '' match arm so that
      * exact-depth matches do not require a separate shard file.
      * Only the shard for the matched segment is loaded per request.
+     *
+     * @param array<string, string> $segToBasenameSlug
      */
-    private function generateTrieDispatcherAtDepth(array $trieNode, int $depth, array $segToBasenameSlug): string
-    {
+    private function generateTrieDispatcherAtDepth(
+        RedirectTrieNode $trieNode,
+        int $depth,
+        array $segToBasenameSlug
+    ): string {
         $arms = [];
 
-        if (isset($trieNode['__redirects'])) {
+        if ($trieNode->redirects !== []) {
             $arms[] = "\t\t\t'' => GeneratedRedirectMatcherBase::firstActive("
-                . $this->dumper->dump($trieNode['__redirects']) . ')';
+                . $this->dumper->dump($trieNode->redirects) . ')';
         }
 
         // Group segments by their target slug to emit compact multi-value match arms.
@@ -313,7 +332,7 @@ class RedirectMatcherGenerator
 
         $matchBody = "return match(\$seg[{$depth}] ?? '') {\n" . implode(",\n", $arms) . "\n\t\t};";
 
-        return $this->anonClassFileHeader(isset($trieNode['__redirects']))
+        return $this->anonClassFileHeader($trieNode->redirects !== [])
             . "return new class {\n"
             . "\tprivate array \$shards = [];\n"
             . "\n"
@@ -343,23 +362,23 @@ class RedirectMatcherGenerator
     /**
      * Add a trie-matching method (and its recursive child methods) to a ClassType.
      *
-     * @param ClassType $class      Target class to add methods to.
-     * @param string    $methodName Name of the method to add.
-     * @param string    $visibility 'public' for root entry point, 'private' for helpers.
-     * @param string    $pathPrefix Slash-joined path segments consumed above this node.
-     * @param array     $trieNode   Current trie node (may have '__redirects' and child keys).
-     * @param int       $depth      Which $seg[N] index to inspect.
+     * @param ClassType           $class      Target class to add methods to.
+     * @param string              $methodName Name of the method to add.
+     * @param 'public'|'private'  $visibility 'public' for root entry point, 'private' for helpers.
+     * @param string              $pathPrefix Slash-joined path segments consumed above this node.
+     * @param RedirectTrieNode    $trieNode   Current trie node (may have redirects and/or children).
+     * @param int                 $depth      Which $seg[N] index to inspect.
      */
     private function addTrieMethodToClass(
         ClassType $class,
         string $methodName,
         string $visibility,
         string $pathPrefix,
-        array $trieNode,
+        RedirectTrieNode $trieNode,
         int $depth
     ): void {
         $method = $class->addMethod($methodName);
-        $method->setVisibility($visibility);
+        $method->setVisibility($visibility === 'public' ? Visibility::Public : Visibility::Private);
         $method->addParameter('seg')->setType('array');
         $method->setReturnType('?array');
         if (str_starts_with($methodName, 'matchSeg_')) {
@@ -368,25 +387,21 @@ class RedirectMatcherGenerator
 
         $arms = [];
 
-        if (isset($trieNode['__redirects'])) {
+        if ($trieNode->redirects !== []) {
             $arms[] = sprintf(
                 "\t'' => GeneratedRedirectMatcherBase::firstActive(%s)",
-                $this->dumper->dump($trieNode['__redirects'])
+                $this->dumper->dump($trieNode->redirects)
             );
         }
 
-        foreach ($trieNode as $segment => $childNode) {
-            if ($segment === '__redirects') {
-                continue;
-            }
-
-            $childPrefix = $pathPrefix === '' ? (string)$segment : $pathPrefix . '/' . $segment;
+        foreach ($trieNode->children as $segment => $childNode) {
+            $childPrefix = $pathPrefix === '' ? $segment : $pathPrefix . '/' . $segment;
             $childMethodName = 'matchSeg_' . md5($childPrefix);
 
             $this->addTrieMethodToClass($class, $childMethodName, 'private', $childPrefix, $childNode, $depth + 1);
             $arms[] = sprintf(
                 "\t%s => \$this->%s(\$seg)",
-                $this->dumper->dump((string)$segment),
+                $this->dumper->dump($segment),
                 $childMethodName
             );
         }
@@ -399,23 +414,27 @@ class RedirectMatcherGenerator
         );
     }
 
-    private function insertIntoTrie(array &$trie, array $segments, array $redirects): void
+    /**
+     * @param array<int, string>      $segments
+     * @param array<int, RedirectRow> $redirects
+     */
+    private function insertIntoTrie(RedirectTrieNode $trie, array $segments, array $redirects): void
     {
-        $node = &$trie;
+        $node = $trie;
         foreach ($segments as $segment) {
-            if (!array_key_exists($segment, $node)) {
-                $node[$segment] = [];
-            }
-            $node = &$node[$segment];
+            $node = $node->children[$segment] ??= new RedirectTrieNode();
         }
-        $node['__redirects'] = array_merge($node['__redirects'] ?? [], $redirects);
+        $node->redirects = array_merge($node->redirects, $redirects);
     }
 
     // -------------------------------------------------------------------------
     // Regex (regexp_flat / regexp_query_parameters)
     // -------------------------------------------------------------------------
 
-    /** @return \Generator<string, string> */
+    /**
+     * @param array<string, array<int, RedirectRow>> $patterns
+     * @return \Generator<string, string>
+     */
     private function yieldRegexFiles(string $hash, string $type, array $patterns, string $typePrefix): \Generator
     {
         $count = $this->countBucket($patterns);
@@ -438,6 +457,8 @@ class RedirectMatcherGenerator
     /**
      * Generate a file that returns a regex-pattern array.
      * Used for both non-sharded and individual shard files.
+     *
+     * @param array<string, array<int, RedirectRow>> $patterns
      */
     private function generateRegexFile(array $patterns): string
     {
@@ -551,6 +572,8 @@ class RedirectMatcherGenerator
 
     /**
      * Count the total number of redirect entries across all paths in a type bucket.
+     *
+     * @param array<string, array<int, RedirectRow>> $bucket
      */
     private function countBucket(array $bucket): int
     {
@@ -564,13 +587,11 @@ class RedirectMatcherGenerator
     /**
      * Count the total number of redirect entries in a trie node and all its descendants.
      */
-    private function countTrieNode(array $trieNode): int
+    private function countTrieNode(RedirectTrieNode $trieNode): int
     {
-        $count = count($trieNode['__redirects'] ?? []);
-        foreach ($trieNode as $key => $child) {
-            if ($key !== '__redirects') {
-                $count += $this->countTrieNode($child);
-            }
+        $count = count($trieNode->redirects);
+        foreach ($trieNode->children as $child) {
+            $count += $this->countTrieNode($child);
         }
         return $count;
     }

@@ -17,6 +17,8 @@ use TYPO3\CMS\Redirects\Service\RedirectCacheService;
  *
  * Note: BeforeRedirectMatchDomainEvent is NOT dispatched on PHP-file-cache hits,
  * which is the same accepted trade-off as the existing per-request result cache.
+ *
+ * @phpstan-import-type RedirectRow from \a9f\BetterRedirects\Cache\GeneratedRedirectMatcherBase
  */
 class PhpFileRedirectMatcherService
 {
@@ -30,7 +32,7 @@ class PhpFileRedirectMatcherService
     ) {}
 
     /**
-     * @return false|null|array<string, mixed>
+     * @return false|null|RedirectRow
      *   false  = PHP file not available; caller should fall back to parent matching
      *   null   = no redirect matched
      *   array  = matched redirect record

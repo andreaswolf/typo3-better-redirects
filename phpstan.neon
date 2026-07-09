@@ -8,3 +8,8 @@ parameters:
   excludePaths:
     - public/
     - vendor/
+    - ext_emconf.php
+
+  # do not turn this off; otherwise fixed PhpStan errors will not lead to reports (and we should update the baseline once
+  # errors were fixed)
+  reportUnmatchedIgnoredErrors: true

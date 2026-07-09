@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace a9f\BetterRedirects\Cache;
 
+/**
+ * @phpstan-import-type RedirectRow from \a9f\BetterRedirects\Cache\GeneratedRedirectMatcherBase
+ */
 interface MatchResultCacheInterface
 {
     /**
@@ -13,11 +16,15 @@ interface MatchResultCacheInterface
      *   false  — cache miss (no entry stored yet)
      *   null   — cached "no match" (a redirect lookup was done and found nothing)
      *   array  — cached redirect record
+     *
+     * @return RedirectRow|false|null
      */
     public function get(string $domain, string $path, string $query): false|null|array;
 
     /**
      * Stores a match result. Pass null for $redirect when no redirect was found.
+     *
+     * @param RedirectRow|null $redirect
      */
     public function set(string $domain, string $path, string $query, ?array $redirect, int $lifetime): void;
 
