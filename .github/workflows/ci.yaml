@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: "Checkout"
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: "Install PHP"
         uses: shivammathur/setup-php@v2
         with:
@@ -24,7 +24,7 @@ jobs:
       - name: "Show Composer version"
         run: composer --version
       - name: "Cache dependencies installed with composer"
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           key: "php${{ matrix.php-version }}-composer-${{ hashFiles('**/composer.json') }}"
           path: ~/.cache/composer
@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: "Checkout"
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: "Install PHP"
         uses: shivammathur/setup-php@v2
         with:
@@ -64,7 +64,7 @@ jobs:
       - name: "Show Composer version"
         run: composer --version
       - name: "Cache dependencies installed with composer"
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           key: "php8.4-composer-${{ hashFiles('**/composer.json') }}"
           path: ~/.cache/composer
