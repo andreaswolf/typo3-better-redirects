@@ -15,6 +15,7 @@
     },
     "require-dev": {
         "ergebnis/composer-normalize": "^2.50",
+        "friendsofphp/php-cs-fixer": "^3.95",
         "phpstan/phpstan": "^2.2",
         "phpunit/phpunit": "^12.5",
         "typo3/testing-framework": "^9.5"
@@ -43,6 +44,8 @@
         }
     },
     "scripts": {
+        "cs:check": "@cs:fix --diff --verbose --dry-run",
+        "cs:fix": "php-cs-fixer fix --ansi",
         "analyze:php": "phpstan --memory-limit=256M",
         "test:php:unit": "phpunit --config phpunit.xml"
     }
