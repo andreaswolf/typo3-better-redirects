@@ -229,7 +229,12 @@ class RedirectMatcherGenerator
                 $childSlug = $hash . '_tr_' . md5($childPrefix);
                 $segToBasenameSlug[$segment] = $childSlug;
                 yield from $this->yieldTrieShardFiles(
-                    $hash, $childNode, $childPrefix, $depth + 1, $typePrefix, $childSlug
+                    $hash,
+                    $childNode,
+                    $childPrefix,
+                    $depth + 1,
+                    $typePrefix,
+                    $childSlug
                 );
             } else {
                 // Small child: collect for bin-packing to avoid one-redirect-per-file.
@@ -326,7 +331,7 @@ class RedirectMatcherGenerator
         foreach ($slugToSegments as $slug => $segments) {
             $segParts = array_map(fn(string $s): string => $this->dumper->dump($s), $segments);
             $arms[] = "\t\t\t" . implode(', ', $segParts)
-                . " => \$this->loadShard(" . $this->dumper->dump($slug) . ", \$seg)";
+                . ' => $this->loadShard(' . $this->dumper->dump($slug) . ', $seg)';
         }
         $arms[] = "\t\t\tdefault => null";
 
@@ -356,7 +361,7 @@ class RedirectMatcherGenerator
     {
         $classBody = (new PsrPrinter())->printClass($class);
         // printClass on an anonymous class produces "{\n    methods\n}" (no "class" keyword).
-        return $this->anonClassFileHeader(true) . "return new class " . $classBody . ";\n";
+        return $this->anonClassFileHeader(true) . 'return new class ' . $classBody . ";\n";
     }
 
     /**
@@ -409,8 +414,8 @@ class RedirectMatcherGenerator
         $arms[] = "\tdefault => null";
 
         $method->setBody(
-            sprintf("return match(\$seg[%d] ?? '') {\n", $depth) .
-            implode(",\n", $arms) . "\n};"
+            sprintf("return match(\$seg[%d] ?? '') {\n", $depth)
+            . implode(",\n", $arms) . "\n};"
         );
     }
 
@@ -495,10 +500,10 @@ class RedirectMatcherGenerator
         $file = new PhpFile();
         $file->setStrictTypes(true);
         $file->addComment(
-            "@generated\n" .
-            '@date ' . date('Y-m-d H:i:s') . "\n" .
-            '@host ' . $host . "\n" .
-            '@version ' . $versionDir
+            "@generated\n"
+            . '@date ' . date('Y-m-d H:i:s') . "\n"
+            . '@host ' . $host . "\n"
+            . '@version ' . $versionDir
         );
 
         $namespace = $file->addNamespace('a9f\\BetterRedirects\\Cache\\Generated');
@@ -517,9 +522,9 @@ class RedirectMatcherGenerator
         $m->addParameter('key')->setType('string');
         $m->setReturnType('?array');
         $m->setBody(
-            "static \$handler = null;\n" .
-            "\$handler ??= require __DIR__ . '/{$typePath}{$hash}_fq.php';\n" .
-            "return \$handler->match(\$key);"
+            "static \$handler = null;\n"
+            . "\$handler ??= require __DIR__ . '/{$typePath}{$hash}_fq.php';\n"
+            . 'return $handler->match($key);'
         );
 
         $m = $class->addMethod('matchTrieRoot');
@@ -527,27 +532,27 @@ class RedirectMatcherGenerator
         $m->addParameter('seg')->setType('array');
         $m->setReturnType('?array');
         $m->setBody(
-            "static \$handler = null;\n" .
-            "\$handler ??= require __DIR__ . '/{$typePath}{$hash}_tr.php';\n" .
-            "return \$handler->match(\$seg);"
+            "static \$handler = null;\n"
+            . "\$handler ??= require __DIR__ . '/{$typePath}{$hash}_tr.php';\n"
+            . 'return $handler->match($seg);'
         );
 
         $m = $class->addMethod('matchRegexQueryParams');
         $m->setVisibility('protected');
         $m->setReturnType('array');
         $m->setBody(
-            "static \$patterns = null;\n" .
-            "\$patterns ??= require __DIR__ . '/{$typePath}{$hash}_rq.php';\n" .
-            "return \$patterns;"
+            "static \$patterns = null;\n"
+            . "\$patterns ??= require __DIR__ . '/{$typePath}{$hash}_rq.php';\n"
+            . 'return $patterns;'
         );
 
         $m = $class->addMethod('matchRegexFlat');
         $m->setVisibility('protected');
         $m->setReturnType('array');
         $m->setBody(
-            "static \$patterns = null;\n" .
-            "\$patterns ??= require __DIR__ . '/{$typePath}{$hash}_rf.php';\n" .
-            "return \$patterns;"
+            "static \$patterns = null;\n"
+            . "\$patterns ??= require __DIR__ . '/{$typePath}{$hash}_rf.php';\n"
+            . 'return $patterns;'
         );
 
         return (new PsrPrinter())->printFile($file);

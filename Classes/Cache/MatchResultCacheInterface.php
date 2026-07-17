@@ -19,7 +19,7 @@ interface MatchResultCacheInterface
      *
      * @return RedirectRow|false|null
      */
-    public function get(string $domain, string $path, string $query): false|null|array;
+    public function get(string $domain, string $path, string $query): false|array|null;
 
     /**
      * Stores a match result. Pass null for $redirect when no redirect was found.

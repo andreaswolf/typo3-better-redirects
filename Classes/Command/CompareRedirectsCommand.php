@@ -148,7 +148,7 @@ final class CompareRedirectsCommand extends Command
         shuffle($rows);
 
         return array_map(
-            static fn (array $row): array => [
+            static fn(array $row): array => [
                 'uid' => (int)$row['uid'],
                 'source_host' => (string)$row['source_host'],
                 'source_path' => (string)$row['source_path'],

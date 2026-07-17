@@ -30,7 +30,7 @@ class MatchResultCache implements MatchResultCacheInterface
     /**
      * @return RedirectRow|false|null
      */
-    public function get(string $domain, string $path, string $query): false|null|array
+    public function get(string $domain, string $path, string $query): false|array|null
     {
         return $this->cache->get($this->buildCacheKey($domain, $path, $query));
     }

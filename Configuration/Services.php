@@ -13,6 +13,7 @@ use TYPO3\CMS\Core\Cache\CacheManager;
 use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
 use TYPO3\CMS\Redirects\Service\RedirectCacheService;
 use TYPO3\CMS\Redirects\Service\RedirectService;
+
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 
 return function (ContainerConfigurator $containerConfigurator, ContainerBuilder $containerBuilder): void {
@@ -29,7 +30,7 @@ return function (ContainerConfigurator $containerConfigurator, ContainerBuilder 
     // The cache must be configured in ext_localconf.php before this is used.
     $services->set('cache.better_redirects')
         ->class(FrontendInterface::class)
-        ->factory([service( CacheManager::class), 'getCache'])
+        ->factory([service(CacheManager::class), 'getCache'])
         ->arg('$identifier', 'better_redirects');
 
     // Bind interface → implementation.

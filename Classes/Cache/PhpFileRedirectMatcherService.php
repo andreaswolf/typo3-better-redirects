@@ -32,12 +32,12 @@ class PhpFileRedirectMatcherService
     ) {}
 
     /**
-     * @return false|null|RedirectRow
+     * @return false|RedirectRow|null
      *   false  = PHP file not available; caller should fall back to parent matching
      *   null   = no redirect matched
      *   array  = matched redirect record
      */
-    public function match(string $domain, string $path, string $query): false|null|array
+    public function match(string $domain, string $path, string $query): false|array|null
     {
         foreach ([$domain, '*'] as $host) {
             try {
