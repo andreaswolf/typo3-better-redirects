@@ -43,7 +43,7 @@ jobs:
           - "8.4"
           - "8.5"
         typo3-version:
-          - "13"
+          - "14"
         command:
           - "analyze:php"
           - "cs:check"
