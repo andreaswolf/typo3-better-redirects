@@ -13,6 +13,8 @@ use TYPO3\TestingFramework\Core\Unit\UnitTestCase;
 /**
  * Tests the PhpFileRedirectCache read/write/invalidate operations using a
  * temporary directory so no TYPO3 environment is required.
+ *
+ * @phpstan-import-type RedirectRow from \a9f\BetterRedirects\Cache\GeneratedRedirectMatcherBase
  */
 class PhpFileRedirectCacheTest extends UnitTestCase
 {
@@ -87,14 +89,31 @@ class PhpFileRedirectCacheTest extends UnitTestCase
     public function loadedMatcherFunctionsCorrectly(): void
     {
         $host     = 'functional-' . uniqid();
-        $redirect = ['uid' => 77, 'disabled' => 0, 'starttime' => 0, 'endtime' => 0, 'target' => '/new'];
+        $redirect = [
+            'uid' => 77,
+            'pid' => 0,
+            'source_host' => $host,
+            'source_path' => '/old',
+            'target' => '/new',
+            'target_statuscode' => 307,
+            'force_https' => 0,
+            'keep_query_parameters' => 0,
+            'respect_query_parameters' => 0,
+            'is_regexp' => 0,
+            'disabled' => 0,
+            'starttime' => 0,
+            'endtime' => 0,
+            'hitcount' => 0,
+        ];
 
         $this->writeAllFiles($host, [
             'flat' => ['/old/' => [77 => $redirect]],
         ]);
         $matcher = $this->cache->load($host);
 
-        self::assertSame(77, $matcher->match('/old', '')['uid']);
+        $match = $matcher->match('/old', '');
+        self::assertNotNull($match);
+        self::assertSame(77, $match['uid']);
         self::assertNull($matcher->match('/other', ''));
     }
 
@@ -227,6 +246,13 @@ class PhpFileRedirectCacheTest extends UnitTestCase
     /**
      * Write all generated PHP files for $host to the cache using writeSlug().
      * This mirrors what PhpFileRedirectMatcherService does at runtime.
+     *
+     * @param array{
+     *     flat?: array<string, array<int, RedirectRow>>,
+     *     respect_query_parameters?: array<string, array<int, RedirectRow>>,
+     *     regexp_flat?: array<string, array<int, RedirectRow>>,
+     *     regexp_query_parameters?: array<string, array<int, RedirectRow>>,
+     * } $redirects
      */
     private function writeAllFiles(string $host, array $redirects = [], string $versionDir = 'testversion'): void
     {

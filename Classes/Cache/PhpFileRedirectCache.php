@@ -31,6 +31,10 @@ class PhpFileRedirectCache
             : Environment::getVarPath() . '/cache/code/better_redirects/';
     }
 
+    /**
+     * @phpstan-impure Result depends on filesystem state, which can change between
+     *     calls (e.g. another process finishing a concurrent cache rebuild).
+     */
     public function exists(string $host): bool
     {
         return file_exists($this->filePath($host));
@@ -71,7 +75,11 @@ class PhpFileRedirectCache
         if (!class_exists($className, false)) {
             require $this->filePath($host);
         }
-        return new $className();
+        $instance = new $className();
+        if (!$instance instanceof GeneratedRedirectMatcherBase) {
+            throw new \RuntimeException(sprintf('Generated matcher class %s does not extend GeneratedRedirectMatcherBase', $className));
+        }
+        return $instance;
     }
 
     /**

@@ -16,6 +16,8 @@ use TYPO3\CMS\Redirects\Service\RedirectCacheService;
  *
  * Wired as a transparent DI alias in Configuration/Services.php so that all call sites
  * (DataHandlerCacheFlushingHook, SlugService, …) transparently use this subclass.
+ *
+ * @phpstan-import-type RedirectRow from \a9f\BetterRedirects\Cache\GeneratedRedirectMatcherBase
  */
 class CachingRedirectCacheService extends RedirectCacheService
 {
@@ -30,6 +32,13 @@ class CachingRedirectCacheService extends RedirectCacheService
     /**
      * Rebuild the TYPO3 redirect index for $sourceHost and immediately regenerate the
      * PHP file cache for that host from the freshly-fetched redirect data.
+     *
+     * @return array{
+     *     flat?: array<string, array<int, RedirectRow>>,
+     *     respect_query_parameters?: array<string, array<int, RedirectRow>>,
+     *     regexp_flat?: array<string, array<int, RedirectRow>>,
+     *     regexp_query_parameters?: array<string, array<int, RedirectRow>>,
+     * }
      */
     public function rebuildForHost(string $sourceHost): array
     {
@@ -43,6 +52,13 @@ class CachingRedirectCacheService extends RedirectCacheService
      * active version directory alive so that in-flight requests can still lazy-load its
      * type files.  The atomic rename of the main file ({hash}.php) switches all new
      * readers to the new version; the old version directory is pruned on the next write.
+     *
+     * @param array{
+     *     flat?: array<string, array<int, RedirectRow>>,
+     *     respect_query_parameters?: array<string, array<int, RedirectRow>>,
+     *     regexp_flat?: array<string, array<int, RedirectRow>>,
+     *     regexp_query_parameters?: array<string, array<int, RedirectRow>>,
+     * } $redirects
      */
     private function rebuildPhpFileCache(string $host, array $redirects): void
     {

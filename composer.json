@@ -9,12 +9,15 @@
         }
     ],
     "require": {
+        "php": "^8.3",
         "nette/php-generator": "^4.1",
         "typo3/cms-core": "^13.4",
         "typo3/cms-redirects": "^13.4"
     },
     "require-dev": {
         "ergebnis/composer-normalize": "^2.50",
+        "friendsofphp/php-cs-fixer": "^3.95",
+        "phpstan/phpstan": "^2.2",
         "phpunit/phpunit": "^12.5",
         "typo3/testing-framework": "^9.5"
     },
@@ -40,5 +43,11 @@
         "typo3/cms": {
             "extension-key": "better_redirects"
         }
+    },
+    "scripts": {
+        "cs:check": "@cs:fix --diff --verbose --dry-run",
+        "cs:fix": "php-cs-fixer fix --ansi",
+        "analyze:php": "phpstan --memory-limit=256M",
+        "test:php:unit": "phpunit --config phpunit.xml"
     }
 }

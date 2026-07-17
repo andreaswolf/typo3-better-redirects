@@ -15,6 +15,8 @@ use TYPO3\TestingFramework\Core\Unit\UnitTestCase;
  * Strategy: generateFiles() → write to tmpDir → require main file → instantiate → match() → assert.
  * Using real require() (not eval) means __DIR__ inside generated classes resolves
  * correctly to the temp directory, so lazy-load require calls work.
+ *
+ * @phpstan-import-type RedirectRow from \a9f\BetterRedirects\Cache\GeneratedRedirectMatcherBase
  */
 class RedirectMatcherGeneratorTest extends UnitTestCase
 {
@@ -73,7 +75,7 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
             // eval in isolation; a parse error causes eval() to return false
             $result = @eval($stripped);
             self::assertNotFalse(
-                $result !== false || true,
+                $result,
                 "eval() of generated file '{$slug}' produced a parse error"
             );
         }
@@ -105,8 +107,8 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
             'flat' => ['/news/' => [1 => $redirect]],
         ]);
 
-        self::assertSame(1, $matcher->match('/news', '')['uid']);
-        self::assertSame(1, $matcher->match('/news/', '')['uid']);
+        self::assertSame(1, $this->assertMatched($matcher->match('/news', ''))['uid']);
+        self::assertSame(1, $this->assertMatched($matcher->match('/news/', ''))['uid']);
     }
 
     #[Test]
@@ -135,9 +137,9 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
             ],
         ]);
 
-        self::assertSame(1, $matcher->match('/news', '')['uid']);
-        self::assertSame(2, $matcher->match('/news/2024', '')['uid']);
-        self::assertSame(3, $matcher->match('/news/2024/article', '')['uid']);
+        self::assertSame(1, $this->assertMatched($matcher->match('/news', ''))['uid']);
+        self::assertSame(2, $this->assertMatched($matcher->match('/news/2024', ''))['uid']);
+        self::assertSame(3, $this->assertMatched($matcher->match('/news/2024/article', ''))['uid']);
     }
 
     #[Test]
@@ -148,7 +150,7 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
             'flat' => ['/' => [99 => $redirect]],
         ]);
 
-        self::assertSame(99, $matcher->match('/', '')['uid']);
+        self::assertSame(99, $this->assertMatched($matcher->match('/', ''))['uid']);
     }
 
     #[Test]
@@ -160,7 +162,7 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
             'flat' => ['/über-uns/team-2024/' => [7 => $redirect]],
         ]);
 
-        self::assertSame(7, $matcher->match('/über-uns/team-2024', '')['uid']);
+        self::assertSame(7, $this->assertMatched($matcher->match('/über-uns/team-2024', ''))['uid']);
     }
 
     // -------------------------------------------------------------------------
@@ -175,7 +177,7 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
             'respect_query_parameters' => ['/old?ref=1' => [20 => $redirect]],
         ]);
 
-        self::assertSame(20, $matcher->match('/old', 'ref=1')['uid']);
+        self::assertSame(20, $this->assertMatched($matcher->match('/old', 'ref=1'))['uid']);
     }
 
     #[Test]
@@ -201,7 +203,7 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
             'regexp_flat' => ['/^\/old\/(.+)$/' => [30 => $redirect]],
         ]);
 
-        self::assertSame(30, $matcher->match('/old/page', '')['uid']);
+        self::assertSame(30, $this->assertMatched($matcher->match('/old/page', ''))['uid']);
     }
 
     #[Test]
@@ -212,7 +214,7 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
             'regexp_query_parameters' => ['/^\/search\?q=.+$/' => [40 => $redirect]],
         ]);
 
-        self::assertSame(40, $matcher->match('/search', 'q=typo3')['uid']);
+        self::assertSame(40, $this->assertMatched($matcher->match('/search', 'q=typo3'))['uid']);
         self::assertNull($matcher->match('/search', ''));
     }
 
@@ -230,7 +232,7 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
             'flat' => ['/page/' => [1 => $expired, 2 => $active]],
         ]);
 
-        self::assertSame(2, $matcher->match('/page', '')['uid']);
+        self::assertSame(2, $this->assertMatched($matcher->match('/page', ''))['uid']);
     }
 
     #[Test]
@@ -271,9 +273,9 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
 
         $matcher = $this->generateAndLoadWith($generator, $host, $redirects);
 
-        self::assertSame(1, $matcher->match('/a', 'x=1')['uid']);
-        self::assertSame(2, $matcher->match('/b', 'x=2')['uid']);
-        self::assertSame(3, $matcher->match('/c', 'x=3')['uid']);
+        self::assertSame(1, $this->assertMatched($matcher->match('/a', 'x=1'))['uid']);
+        self::assertSame(2, $this->assertMatched($matcher->match('/b', 'x=2'))['uid']);
+        self::assertSame(3, $this->assertMatched($matcher->match('/c', 'x=3'))['uid']);
         self::assertNull($matcher->match('/a', 'x=2'));
     }
 
@@ -299,10 +301,10 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
 
         $matcher = $this->generateAndLoadWith($generator, $host, $redirects);
 
-        self::assertSame(1, $matcher->match('/news', '')['uid']);
-        self::assertSame(2, $matcher->match('/about', '')['uid']);
-        self::assertSame(3, $matcher->match('/contact', '')['uid']);
-        self::assertSame(4, $matcher->match('/blog', '')['uid']);
+        self::assertSame(1, $this->assertMatched($matcher->match('/news', ''))['uid']);
+        self::assertSame(2, $this->assertMatched($matcher->match('/about', ''))['uid']);
+        self::assertSame(3, $this->assertMatched($matcher->match('/contact', ''))['uid']);
+        self::assertSame(4, $this->assertMatched($matcher->match('/blog', ''))['uid']);
         self::assertNull($matcher->match('/other', ''));
     }
 
@@ -326,9 +328,9 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
 
         $matcher = $this->generateAndLoadWith($generator, $host, $redirects);
 
-        self::assertSame(1, $matcher->match('/old1/page', '')['uid']);
-        self::assertSame(2, $matcher->match('/old2/page', '')['uid']);
-        self::assertSame(3, $matcher->match('/old3/page', '')['uid']);
+        self::assertSame(1, $this->assertMatched($matcher->match('/old1/page', ''))['uid']);
+        self::assertSame(2, $this->assertMatched($matcher->match('/old2/page', ''))['uid']);
+        self::assertSame(3, $this->assertMatched($matcher->match('/old3/page', ''))['uid']);
         self::assertNull($matcher->match('/other/page', ''));
     }
 
@@ -347,7 +349,7 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
         $matcher = $this->generateAndLoadWith($generator, $host, $redirects);
 
         for ($i = 1; $i <= 6; $i++) {
-            self::assertSame($i, $matcher->match("/seg{$i}", '')['uid']);
+            self::assertSame($i, $this->assertMatched($matcher->match("/seg{$i}", ''))['uid']);
         }
         self::assertNull($matcher->match('/other', ''));
     }
@@ -370,8 +372,8 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
 
         $matcher = $this->generateAndLoadWith($generator, $host, $redirects);
 
-        self::assertSame(1, $matcher->match('/news/2024', '')['uid']);
-        self::assertSame(2, $matcher->match('/news/2025', '')['uid']);
+        self::assertSame(1, $this->assertMatched($matcher->match('/news/2024', ''))['uid']);
+        self::assertSame(2, $this->assertMatched($matcher->match('/news/2025', ''))['uid']);
         self::assertNull($matcher->match('/news', ''));
         self::assertNull($matcher->match('/other', ''));
     }
@@ -394,8 +396,8 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
 
         $matcher = $this->generateAndLoadWith($generator, $host, $redirects);
 
-        self::assertSame(1, $matcher->match('/news/2024/article-1', '')['uid']);
-        self::assertSame(2, $matcher->match('/news/2024/article-2', '')['uid']);
+        self::assertSame(1, $this->assertMatched($matcher->match('/news/2024/article-1', ''))['uid']);
+        self::assertSame(2, $this->assertMatched($matcher->match('/news/2024/article-2', ''))['uid']);
         self::assertNull($matcher->match('/news/2024', ''));
         self::assertNull($matcher->match('/news', ''));
     }
@@ -422,10 +424,10 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
 
         $matcher = $this->generateAndLoadWith($generator, $host, $redirects);
 
-        self::assertSame(1, $matcher->match('/section', '')['uid']);
-        self::assertSame(2, $matcher->match('/section/a', '')['uid']);
-        self::assertSame(3, $matcher->match('/section/b', '')['uid']);
-        self::assertSame(4, $matcher->match('/section/c', '')['uid']);
+        self::assertSame(1, $this->assertMatched($matcher->match('/section', ''))['uid']);
+        self::assertSame(2, $this->assertMatched($matcher->match('/section/a', ''))['uid']);
+        self::assertSame(3, $this->assertMatched($matcher->match('/section/b', ''))['uid']);
+        self::assertSame(4, $this->assertMatched($matcher->match('/section/c', ''))['uid']);
         self::assertNull($matcher->match('/section/d', ''));
         self::assertNull($matcher->match('/other', ''));
     }
@@ -447,8 +449,8 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
 
         $matcher = $this->generateAndLoadWith($generator, $host, $redirects);
 
-        self::assertSame(99, $matcher->match('/', '')['uid']);
-        self::assertSame(1, $matcher->match('/news', '')['uid']);
+        self::assertSame(99, $this->assertMatched($matcher->match('/', ''))['uid']);
+        self::assertSame(1, $this->assertMatched($matcher->match('/news', ''))['uid']);
     }
 
     // -------------------------------------------------------------------------
@@ -464,12 +466,27 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
      * the matcher methods find their type files correctly.
      *
      * Uses a unique host per call to avoid class-name collisions across tests.
+     *
+     * @param array{
+     *     flat?: array<string, array<int, RedirectRow>>,
+     *     respect_query_parameters?: array<string, array<int, RedirectRow>>,
+     *     regexp_flat?: array<string, array<int, RedirectRow>>,
+     *     regexp_query_parameters?: array<string, array<int, RedirectRow>>,
+     * } $redirects
      */
     private function generateAndLoad(string $host, array $redirects): \a9f\BetterRedirects\Cache\GeneratedRedirectMatcherBase
     {
         return $this->generateAndLoadWith($this->generator, $host, $redirects);
     }
 
+    /**
+     * @param array{
+     *     flat?: array<string, array<int, RedirectRow>>,
+     *     respect_query_parameters?: array<string, array<int, RedirectRow>>,
+     *     regexp_flat?: array<string, array<int, RedirectRow>>,
+     *     regexp_query_parameters?: array<string, array<int, RedirectRow>>,
+     * } $redirects
+     */
     private function generateAndLoadWith(
         RedirectMatcherGenerator $generator,
         string $host,
@@ -494,11 +511,30 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
         if (!class_exists($className, false)) {
             require $tmpDir . '/' . $hash . '.php';
         }
-        return new $className();
+        $instance = new $className();
+        if (!$instance instanceof \a9f\BetterRedirects\Cache\GeneratedRedirectMatcherBase) {
+            throw new \RuntimeException(
+                "Generated class '{$className}' does not extend GeneratedRedirectMatcherBase"
+            );
+        }
+        return $instance;
     }
 
     /**
-     * @return array<string, mixed>
+     * Asserts that a match() result is not null and returns it narrowed to
+     * RedirectRow, so that callers can safely access array offsets like 'uid'.
+     *
+     * @param RedirectRow|null $row
+     * @return RedirectRow
+     */
+    private function assertMatched(?array $row): array
+    {
+        self::assertNotNull($row);
+        return $row;
+    }
+
+    /**
+     * @return RedirectRow
      */
     private function makeRedirect(
         int $uid,
@@ -507,13 +543,20 @@ class RedirectMatcherGeneratorTest extends UnitTestCase
         int $endtime = 0
     ): array {
         return [
-            'uid'        => $uid,
-            'disabled'   => $disabled ? 1 : 0,
-            'starttime'  => $starttime,
-            'endtime'    => $endtime,
-            'target'     => 'https://example.com/target',
-            'source_path' => '/path',
-            'is_regexp'  => 0,
+            'uid'                      => $uid,
+            'pid'                      => 0,
+            'source_host'              => '*',
+            'source_path'              => '/path',
+            'target'                   => 'https://example.com/target',
+            'target_statuscode'        => 307,
+            'force_https'              => 0,
+            'keep_query_parameters'    => 0,
+            'respect_query_parameters' => 0,
+            'is_regexp'                => 0,
+            'disabled'                 => $disabled ? 1 : 0,
+            'starttime'                => $starttime,
+            'endtime'                  => $endtime,
+            'hitcount'                 => 0,
         ];
     }
 }

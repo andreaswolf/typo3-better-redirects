@@ -30,6 +30,9 @@ class CacheWarmupEventListener
         }
     }
 
+    /**
+     * @return list<string>
+     */
     private function getDistinctSourceHosts(): array
     {
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('sys_redirect');

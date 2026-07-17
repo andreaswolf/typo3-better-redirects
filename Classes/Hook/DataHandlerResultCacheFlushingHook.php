@@ -20,6 +20,9 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
  */
 class DataHandlerResultCacheFlushingHook
 {
+    /**
+     * @param array{table?: string, uid?: int|string, ...} $parameters
+     */
     public function flushResultCacheIfNecessary(array $parameters, DataHandler $dataHandler): void
     {
         if (
@@ -47,6 +50,10 @@ class DataHandlerResultCacheFlushingHook
         $matchResultCache->invalidate(null);
     }
 
+    /**
+     * @param array{uid: int|string, ...} $parameters
+     * @return list<string>
+     */
     private function resolveSourceHosts(array $parameters, DataHandler $dataHandler): array
     {
         $uid = (int)$parameters['uid'];
